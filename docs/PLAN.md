@@ -146,10 +146,23 @@ As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip de
 15. No parts: a single level of chapters.
 16. No automatic conformance claim. The output is built so that a publisher can reasonably make one: language set, navigation, headings, reading order, alt text (warned where missing), and pass-through `conforms_to` / `certified_by` metadata.
 
+17. Windows .exe: bundle a trimmed Java runtime (made with `jlink`) so that EPUBCheck runs without an installed Java.
+18. Literal HTML tags typed into manuscript text (common in AO3-style writing): balanced `<i>`, `<em>`, `<b>`, `<strong>` are interpreted as formatting by default and counted in the report. Unbalanced or unknown tags stay as literal text with a warning. A flag turns interpretation off.
+19. No detectable chapters: the whole body becomes one untitled chapter, with a warning. A short first line stays as an ordinary paragraph (never dropped) and is flagged for review. The title comes from the metadata.
+
+### Findings from the first real manuscript (kept in `local/`, never committed)
+
+- No named styles, no Word italics or bold, no alignment: everything is direct formatting or plain text.
+- Italics are literal `<i>...</i>` text (25 pairs).
+- Scene breaks in three forms: VML horizontal rules (`v:rect o:hr="t"`), a bottom border on the last paragraph of a scene (`w:pBdr/w:bottom`), and a line of underscores.
+- No headings; a working file title as the first line.
+- Mixed straight and curly quotes (42 straight against 651 curly double quotes): preserved, flagged for review.
+- `w:lastRenderedPageBreak` (layout cache) appears 33 times; it is not a real break and must be ignored.
+
 ### v2 direction (not in v1)
 
 The author wants template-driven output, like InDesign templates, as an alternative to cleaning up in Sigil after conversion. v1 prepares for this without building it: a small, stable, documented class vocabulary (docs/markup.md), all styling in one replaceable stylesheet, and XHTML laid out one block per line for hand editing.
 
 ### Windows .exe note
 
-PyInstaller (GPL-2.0 with a bootloader exception that allows distributing bundled applications under any licence) is the likely packager. EPUBCheck needs a Java runtime. Options for milestone 5: bundle a trimmed runtime made with `jlink` (OpenJDK is GPL-2.0 with the Classpath Exception, so it is redistributable), or require an installed Java and skip validation with a warning when it is absent.
+PyInstaller (GPL-2.0 with a bootloader exception that allows distributing bundled applications under any licence) is the likely packager. EPUBCheck needs a Java runtime. Decision: bundle a trimmed runtime made with `jlink` (OpenJDK is GPL-2.0 with the Classpath Exception, so it is redistributable). Expect roughly 40 to 50 MB added to the .exe.
