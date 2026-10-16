@@ -1,0 +1,167 @@
+"""Text-fidelity comparison: what went missing, and what was added."""
+
+from __future__ import annotations
+
+import difflib
+import re
+import unicodedata
+from dataclasses import dataclass, field
+
+LIGATURES = {
+    "\ufb00": "ff",
+    "\ufb01": "fi",
+    "\ufb02": "fl",
+    "\ufb03": "ffi",
+    "\ufb04": "ffl",
+    "\ufb05": "st",
+    "\ufb06": "st",
+}
+# Soft hyphen, zero-width space/joiners, word joiner, BOM.
+INVISIBLE = "\u00ad\u200b\u200c\u200d\u2060\ufeff"
+_TRANSLATE = str.maketrans({**LIGATURES, **dict.fromkeys(INVISIBLE, "")})
+_WS = re.compile(r"\s+")
+
+
+def normalise(text: str) -> str:
+    """NFC, ligatures expanded, invisibles dropped, whitespace collapsed.
+
+    Typographic characters (curly quotes, dashes, ellipses) are deliberately
+    kept: changing them is a fidelity failure, not noise.
+    """
+    text = unicodedata.normalize("NFC", text).translate(_TRANSLATE)
+    # Removing invisibles can expose a new composition, so normalise again.
+    text = unicodedata.normalize("NFC", text)
+    return _WS.sub(" ", text).strip()
+
+
+def tokens(text: str) -> list[str]:
+    return normalise(text).split(" ") if normalise(text) else []
+
+
+@dataclass(slots=True)
+class Hunk:
+    text: str
+    position: int  # token index in the sequence the text belongs to
+    before: str = ""  # a little context from the reference
+    after: str = ""
+
+
+@dataclass(slots=True)
+class FidelityResult:
+    reference_tokens: int
+    output_tokens: int
+    matched_tokens: int
+    missing: list[Hunk] = field(default_factory=list)
+    added: list[Hunk] = field(default_factory=list)
+
+    @property
+    def missing_tokens(self) -> int:
+        return self.reference_tokens - self.matched_tokens
+
+    @property
+    def added_tokens(self) -> int:
+        return self.output_tokens - self.matched_tokens
+
+    @property
+    def ratio(self) -> float:
+        if self.reference_tokens == 0:
+            return 1.0 if self.output_tokens == 0 else 0.0
+        return self.matched_tokens / self.reference_tokens
+
+    @property
+    def loss(self) -> float:
+        if not self.reference_tokens:
+            return 0.0
+        return self.missing_tokens / self.reference_tokens
+
+    def passes(self, threshold: float) -> bool:
+        return self.loss <= threshold
+
+
+CONTEXT = 6
+
+
+def compare(reference: str, output: str) -> FidelityResult:
+    ref, out = tokens(reference), tokens(output)
+    matched = 0
+    missing: list[Hunk] = []
+    added: list[Hunk] = []
+    for op, i1, i2, j1, j2 in _opcodes(ref, out):
+        if op == "equal":
+            matched += i2 - i1
+            continue
+        before = " ".join(ref[max(0, i1 - CONTEXT) : i1])
+        after = " ".join(ref[i2 : i2 + CONTEXT])
+        if i2 > i1:
+            missing.append(Hunk(" ".join(ref[i1:i2]), i1, before, after))
+        if j2 > j1:
+            added.append(Hunk(" ".join(out[j1:j2]), j1, before, after))
+    return FidelityResult(len(ref), len(out), matched, missing, added)
+
+
+def _opcodes(ref: list[str], out: list[str]) -> list[tuple[str, int, int, int, int]]:
+    """difflib opcodes, anchored on unique tokens for long texts.
+
+    SequenceMatcher without autojunk is slow on whole novels because common
+    words occur thousands of times. Tokens that occur exactly once in both
+    texts are matched first (as in patience diff), and difflib only runs on
+    the short stretches between them.
+    """
+    # autojunk would treat frequent words as noise and produce misleading diffs.
+    if len(ref) + len(out) < 20_000:
+        matcher = difflib.SequenceMatcher(None, ref, out, autojunk=False)
+        return [(op, i1, i2, j1, j2) for op, i1, i2, j1, j2 in matcher.get_opcodes()]
+    # Anchor on tokens that are unique in both sequences (patience-style).
+    from collections import Counter
+
+    cr, co = Counter(ref), Counter(out)
+    ref_unique = [(t, i) for i, t in enumerate(ref) if cr[t] == 1 and co[t] == 1]
+    out_pos = {t: j for j, t in enumerate(out) if co[t] == 1 and cr[t] == 1}
+    pairs = [(i, out_pos[t]) for t, i in ref_unique]
+    anchors = _longest_increasing(pairs)
+    result: list[tuple[str, int, int, int, int]] = []
+    pi = pj = 0
+    for ai, aj in [*anchors, (len(ref), len(out))]:
+        if ai > pi or aj > pj:
+            sub = difflib.SequenceMatcher(None, ref[pi:ai], out[pj:aj], autojunk=False)
+            for op, i1, i2, j1, j2 in sub.get_opcodes():
+                result.append((op, i1 + pi, i2 + pi, j1 + pj, j2 + pj))
+        if ai < len(ref):
+            result.append(("equal", ai, ai + 1, aj, aj + 1))
+        pi, pj = ai + 1, aj + 1
+    return _merge(result)
+
+
+def _longest_increasing(pairs: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Longest subsequence of pairs increasing in the second element (pairs sorted by first)."""
+    import bisect
+
+    tails: list[int] = []
+    tail_idx: list[int] = []
+    prev: list[int] = [-1] * len(pairs)
+    for k, (_, j) in enumerate(pairs):
+        pos = bisect.bisect_left(tails, j)
+        if pos == len(tails):
+            tails.append(j)
+            tail_idx.append(k)
+        else:
+            tails[pos] = j
+            tail_idx[pos] = k
+        prev[k] = tail_idx[pos - 1] if pos else -1
+    seq: list[tuple[int, int]] = []
+    k = tail_idx[-1] if tail_idx else -1
+    while k != -1:
+        seq.append(pairs[k])
+        k = prev[k]
+    return seq[::-1]
+
+
+def _merge(ops: list[tuple[str, int, int, int, int]]) -> list[tuple[str, int, int, int, int]]:
+    merged: list[tuple[str, int, int, int, int]] = []
+    for op in ops:
+        if merged and merged[-1][0] == op[0] == "equal":
+            _, i1, _, j1, _ = merged[-1]
+            merged[-1] = ("equal", i1, op[2], j1, op[4])
+        else:
+            merged.append(op)
+    return merged

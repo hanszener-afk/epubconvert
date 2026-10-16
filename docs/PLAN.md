@@ -1,6 +1,6 @@
 # novel2epub: Step 0 plan (awaiting approval)
 
-Status: proposal only. No code has been written.
+Status: approved 2026-10-16. Milestone 1 implemented.
 
 ## 1. Language and runtime
 
@@ -127,6 +127,29 @@ Recommendation: decide each line-end hyphen in this order: (1) in-document evide
 
 As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip determinism, EPUBCheck runner, EPUB text extraction, and tests against hand-built IR books (including footnotes, scene breaks, front and back matter, images, and an all-features book), with a determinism test that builds twice and compares bytes.
 
-## 7. Open questions
+## 7. Decisions (answers to the Step 0 questions)
 
-See the Step 0 reply in the session; answers will be recorded here once given.
+1. Licence: MIT (replaces CC0). Audience: one author, so no PyPI release is planned.
+2. English only (en-GB and en-US). Other languages warn.
+3. Metadata file: TOML only (standard-library `tomllib`, no PyYAML).
+4. Identifier: if none is supplied, a UUID v5 derived from title and authors, with a warning to pin it.
+5. `dcterms:modified`: the source document's modification date. Falls back to 2000-01-01T00:00:00Z, with a warning.
+6. Determinism: same-environment byte identity (deflate kept). The final product is a portable Windows .exe (see note below).
+7. EPUBCheck: not bundled at runtime. Found via an explicit path, `NOVEL2EPUB_EPUBCHECK`, or the `epubcheck` package. Missing means a warning, or an error under `--strict`.
+8. A fidelity failure writes `*.failed.epub` in the report directory, never at the requested output path.
+9. Exit codes: 0 clean, 1 success with warnings, 2 usage error, 3 input rejected, 4 fidelity or EPUBCheck failure.
+10. Scene breaks: `<p class="scene-break" role="separator">* * *</p>`, with one fixed glyph (see docs/css-decisions.md).
+11. Footnotes at chapter end as asides; endnotes in a separate back-matter file.
+12. Title pages only from the source; never generated.
+13. OCR deferred beyond v1. Scanned PDFs fail with a clear error.
+14. Unsupported images (EMF, WMF, TIFF, BMP): convert where possible. Pillow reads WMF/EMF only on Windows, which suits the .exe target; elsewhere they fail loudly.
+15. No parts: a single level of chapters.
+16. No automatic conformance claim. The output is built so that a publisher can reasonably make one: language set, navigation, headings, reading order, alt text (warned where missing), and pass-through `conforms_to` / `certified_by` metadata.
+
+### v2 direction (not in v1)
+
+The author wants template-driven output, like InDesign templates, as an alternative to cleaning up in Sigil after conversion. v1 prepares for this without building it: a small, stable, documented class vocabulary (docs/markup.md), all styling in one replaceable stylesheet, and XHTML laid out one block per line for hand editing.
+
+### Windows .exe note
+
+PyInstaller (GPL-2.0 with a bootloader exception that allows distributing bundled applications under any licence) is the likely packager. EPUBCheck needs a Java runtime. Options for milestone 5: bundle a trimmed runtime made with `jlink` (OpenJDK is GPL-2.0 with the Classpath Exception, so it is redistributable), or require an installed Java and skip validation with a warning when it is absent.

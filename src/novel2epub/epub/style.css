@@ -1,0 +1,100 @@
+/* novel2epub stylesheet.
+   Deliberately small. No font families, font sizes, or line heights: the
+   reader's settings win. Relative units only. Reasons for each rule and for
+   what is absent are in docs/css-decisions.md. */
+
+p {
+  margin: 0;
+  text-indent: 1.5em;
+}
+
+p.first,
+p.centre,
+p.right,
+p.scene-break,
+p.attribution {
+  text-indent: 0;
+}
+
+p.centre {
+  text-align: center;
+}
+
+p.right,
+p.attribution {
+  text-align: right;
+}
+
+h1 {
+  text-align: center;
+  margin: 2em 0 1.5em 0;
+  page-break-after: avoid;
+}
+
+h2, h3, h4, h5, h6 {
+  text-align: center;
+  margin: 1.5em 0 1em 0;
+  page-break-after: avoid;
+}
+
+p.scene-break {
+  text-align: center;
+  margin: 1em 0;
+}
+
+.sc {
+  font-variant: small-caps;
+}
+
+blockquote {
+  margin: 1em 1.5em;
+}
+
+blockquote.epigraph {
+  margin: 1em 2em 2em 2em;
+}
+
+div.verse {
+  margin: 1em 0 1em 2em;
+}
+
+div.stanza {
+  margin: 0 0 1em 0;
+}
+
+div.verse p {
+  text-indent: 0;
+}
+
+div.image,
+figure {
+  margin: 1em 0;
+  text-align: center;
+}
+
+img {
+  max-width: 100%;
+}
+
+div.cover {
+  text-align: center;
+}
+
+aside {
+  margin: 1em 0 0 0;
+}
+
+aside p,
+ol.notes p {
+  text-indent: 0;
+}
+
+ol.notes {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+}
+
+ol.notes li {
+  margin: 0 0 1em 0;
+}

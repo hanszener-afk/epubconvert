@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novel2epub"
+version = "0.1.0"
+description = "Convert DOCX and PDF novel manuscripts to EPUB 3, with a text-fidelity check."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "lxml>=5.0",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    # Bundles the EPUBCheck 5.3.0 jar (BSD-3-Clause). Only the jar is used.
+    "epubcheck==5.3.0",
+]
+
+[project.scripts]
+novel2epub = "novel2epub.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+novel2epub = ["epub/style.css"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["epubcheck: needs Java and the EPUBCheck jar"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src"]
+
+[[tool.mypy.overrides]]
+# lxml-stubs is unmaintained and wrong for lxml 5+ (e.g. default-namespace nsmaps).
+module = ["lxml", "lxml.*"]
+ignore_missing_imports = true
