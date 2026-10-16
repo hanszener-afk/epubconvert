@@ -9,7 +9,7 @@ import traceback
 from pathlib import Path
 
 from novel2epub import __version__
-from novel2epub.pipeline import ConvertOptions, ExitCode, convert
+from novel2epub.pipeline import ConvertOptions, ExitCode, Outcome, convert
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -156,36 +156,36 @@ def _pause_if_own_console() -> None:
             input("\nPress Enter to close this window.")
 
 
-def _print_summary(outcome: object) -> None:
-    from novel2epub.pipeline import Outcome
-
-    assert isinstance(outcome, Outcome)
-    out = sys.stderr
+def summary_lines(outcome: Outcome) -> list[str]:
+    """The end-of-run summary: problems, verification results, and where things went."""
     diag = outcome.diagnostics
+    lines = []
     for issue in diag.issues:
         if issue.severity.value == "info" or issue.message in outcome.failures:
             continue
         where = f" ({issue.source})" if issue.source else ""
-        print(f"{issue.severity.value}: {issue.message}{where}", file=out)
-    for failure in outcome.failures:
-        print(f"failed: {failure}", file=out)
+        lines.append(f"{issue.severity.value}: {issue.message}{where}")
+    lines += [f"failed: {failure}" for failure in outcome.failures]
     fid = outcome.fidelity_main
     if fid is not None:
-        print(
-            f"text fidelity: {fid.ratio:.4%} of {fid.reference_tokens} words matched",
-            file=out,
-        )
+        lines.append(f"text fidelity: {fid.ratio:.4%} of {fid.reference_tokens} words matched")
     if outcome.epubcheck is not None and outcome.epubcheck.ran:
         ec = outcome.epubcheck
-        print(
-            f"EPUBCheck {ec.version}: {len(ec.errors)} error(s), {len(ec.warnings)} warning(s)",
-            file=out,
+        lines.append(
+            f"EPUBCheck {ec.version}: {len(ec.errors)} error(s), {len(ec.warnings)} warning(s)"
         )
-    review = len(diag.needs_review())
+    # The same count as the report's "Needs human review" section.
+    review = sum(i.severity.value != "info" for i in diag.issues) + len(diag.needs_review())
     if review:
-        print(f"{review} decision(s) need human review: see {outcome.report_md}", file=out)
+        lines.append(f"{review} item(s) need human review: see {outcome.report_md}")
     if outcome.written:
-        print(f"wrote {outcome.written}", file=out)
+        lines.append(f"wrote {outcome.written}")
+    return lines
+
+
+def _print_summary(outcome: Outcome) -> None:
+    for line in summary_lines(outcome):
+        print(line, file=sys.stderr)
 
 
 if __name__ == "__main__":

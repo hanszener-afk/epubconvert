@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novel2epub"
-version = "0.5.0"
+version = "0.6.0"
 description = "Convert DOCX and PDF novel manuscripts to EPUB 3, with a text-fidelity check."
 readme = "README.md"
 license = "MIT"
@@ -28,6 +28,9 @@ dev = [
 
 [project.scripts]
 novel2epub = "novel2epub.cli:main"
+
+[project.gui-scripts]
+novel2epub-gui = "novel2epub.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
