@@ -163,9 +163,7 @@ def epubcheck_files(out: Path) -> Path:
 def pyinstaller(runtime: Path, epubcheck: Path) -> Path:
     import PyInstaller.__main__
 
-    os.environ.update(
-        N2E_ROOT=str(ROOT), N2E_RUNTIME=str(runtime), N2E_EPUBCHECK=str(epubcheck)
-    )
+    os.environ.update(N2E_ROOT=str(ROOT), N2E_RUNTIME=str(runtime), N2E_EPUBCHECK=str(epubcheck))
     PyInstaller.__main__.run([
         str(ROOT / "packaging" / "novel2epub.spec"),
         "--noconfirm", "--clean",
