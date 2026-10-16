@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import struct
+import zlib
 from datetime import UTC, datetime
 
 from PIL import Image as PILImage
@@ -40,9 +42,21 @@ MODIFIED = datetime(2026, 3, 14, 9, 26, 53, tzinfo=UTC)
 
 
 def png(width: int, height: int, colour: tuple[int, int, int] = (90, 60, 30)) -> bytes:
-    buf = io.BytesIO()
-    PILImage.new("RGB", (width, height), colour).save(buf, format="PNG")
-    return buf.getvalue()
+    """A plain RGB PNG, written with Python's zlib rather than Pillow, whose
+    compression differs between platforms; fixtures must be identical everywhere."""
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    row = b"\x00" + bytes(colour) * width
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", zlib.compress(row * height, 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def jpeg(width: int, height: int) -> bytes:
