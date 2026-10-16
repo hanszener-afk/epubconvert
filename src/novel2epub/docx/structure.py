@@ -411,10 +411,12 @@ class Structurer:
             )
             titles: set[int] = set()
             if kind is SectionKind.TITLEPAGE:
+                names = {i: self.paras[i].props.style_names for i in content}
                 titles = {
-                    i for i in content
-                    if any(n == "title" or n.endswith(" title") for n in self.paras[i].props.style_names)
-                }  # fmt: skip
+                    i
+                    for i, ns in names.items()
+                    if any(n == "title" or n.endswith(" title") for n in ns)
+                }
             blocks = self._blocks(range(chunk[0], chunk[-1] + 1), breaks, sub_heads, set(), titles)
             out.append(Section(kind, None, blocks, self.paras[content[0]].source))
         return out
