@@ -1,4 +1,4 @@
-"""Build the portable program: a folder holding novel2epub.exe, zipped.
+"""Build the portable program: a folder holding novel2epub.exe and novel2epub-gui.exe, zipped.
 
     python scripts/build_exe.py [--jdk PATH] [--no-smoke-test]
 
@@ -8,14 +8,17 @@ to get the Windows program: PyInstaller does not cross-compile. On Linux it
 builds the Linux equivalent, which is how the script itself is checked.
 
 The folder contains:
-    novel2epub.exe         the program
+    novel2epub-gui.exe     the program in a window
+    novel2epub.exe         the same, for the command line
     _internal/             Python, the libraries, a trimmed Java runtime
                            (runtime/) and EPUBCheck (epubcheck/)
     README.txt, LICENSE.txt, THIRD-PARTY-NOTICES.txt, licences/
 
-The smoke test converts one DOCX and one PDF fixture with the built program,
-with JAVA_HOME and PATH cleared, and requires EPUBCheck to have run on both
-with no errors or warnings: proof that the bundled Java and jar are used.
+The smoke test converts one DOCX and one PDF fixture with the built command
+line program, and one DOCX through the window of the built windowed program
+(its --check mode), with JAVA_HOME and PATH cleared. Each must pass the text
+check and EPUBCheck with no errors or warnings: proof that the bundled Java
+and jar are used, and that the windowed program can run them.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ DIST = ROOT / "dist"
 NAME = "novel2epub"
 WINDOWS = sys.platform == "win32"
 EXE = f"{NAME}.exe" if WINDOWS else NAME
+GUI_EXE = f"{NAME}-gui.exe" if WINDOWS else f"{NAME}-gui"
 
 # What EPUBCheck 5.3.0 needs, from `jdeps --print-module-deps` over its jar and
 # libraries. Checked by comparing EPUBCheck's findings under this runtime and
@@ -85,6 +89,9 @@ EPUBCheck 5.3.0 and the Java libraries it includes
     MIT, Apache 2.0, MPL 2.0, and W3C licences. licences/epubcheck/
     (THIRD-PARTY.txt there lists each library and its licence.)
 
+Tcl/Tk (the window toolkit, through Python's tkinter)
+    A BSD-style licence; see licences/tcl-tk/.
+
 The SCOWL English word list (used to decide line-end hyphens)
     A permissive licence; see licences/scowl/SCOWL-COPYRIGHT.txt.
 
@@ -101,11 +108,13 @@ was lost on the way. No installation and no Java needed: everything is in
 this folder. It makes no network connections.
 
 The quick way
-    Drag a .docx or .pdf file onto novel2epub.exe. A window opens, shows a
-    summary, and waits for Enter. The EPUB and its reports (NAME.report.md
-    and NAME.report.json) are written next to the manuscript.
+    Double-click novel2epub-gui.exe, choose the manuscript, and press
+    Convert. (Or drop a manuscript on novel2epub-gui.exe to have it filled
+    in.) The EPUB and its reports (NAME.report.md and NAME.report.json) are
+    written next to the manuscript unless you choose another place, and
+    "Read the report" shows the report.
 
-From a terminal (Command Prompt or PowerShell), for all the options
+From a terminal (Command Prompt or PowerShell)
     novel2epub.exe manuscript.docx -o book.epub --meta book.toml --cover cover.jpg
     novel2epub.exe --help
 
@@ -154,20 +163,13 @@ def epubcheck_files(out: Path) -> Path:
 def pyinstaller(runtime: Path, epubcheck: Path) -> Path:
     import PyInstaller.__main__
 
-    sep = os.pathsep
-    work = BUILD / "pyinstaller"
+    os.environ.update(
+        N2E_ROOT=str(ROOT), N2E_RUNTIME=str(runtime), N2E_EPUBCHECK=str(epubcheck)
+    )
     PyInstaller.__main__.run([
-        str(ROOT / "packaging" / "entry.py"),
-        "--name", NAME, "--onedir", "--console", "--noconfirm", "--clean",
-        "--distpath", str(DIST), "--workpath", str(work), "--specpath", str(work),
-        "--add-data", f"{runtime}{sep}runtime",
-        "--add-data", f"{epubcheck}{sep}epubcheck",
-        "--collect-data", "novel2epub",
-        "--collect-data", "pdfminer",
-        "--collect-all", "pypdfium2",
-        "--collect-all", "pypdfium2_raw",
-        "--exclude-module", "tkinter",
-        "--exclude-module", "epubcheck",
+        str(ROOT / "packaging" / "novel2epub.spec"),
+        "--noconfirm", "--clean",
+        "--distpath", str(DIST), "--workpath", str(BUILD / "pyinstaller"),
     ])  # fmt: skip
     return DIST / NAME
 
@@ -223,6 +225,24 @@ def licences(folder: Path, epubcheck_src: Path, java: str) -> None:
             shutil.copy2(epubcheck_src / f, lic / "epubcheck" / f)
     shutil.copytree(epubcheck_src / "licenses", lic / "epubcheck" / "licenses")
 
+    import tkinter
+
+    tcl = Path(tkinter.Tcl().eval("info library"))
+    (lic / "tcl-tk").mkdir()
+    version = tkinter.TkVersion
+    candidates = [  # python.org builds, then Debian and Ubuntu
+        ("tcl", tcl / "license.terms"),
+        ("tk", tcl.parent / f"tk{version}" / "license.terms"),
+        ("tcl", Path(f"/usr/share/doc/tcl{version}/copyright")),
+        ("tk", Path(f"/usr/share/doc/tk{version}/copyright")),
+    ]
+    for name, path in candidates:
+        target = lic / "tcl-tk" / f"{name}-licence.txt"
+        if path.is_file() and not target.exists():
+            shutil.copy2(path, target)
+    if not any((lic / "tcl-tk").iterdir()):
+        sys.exit("No Tcl/Tk licence file found; add it by hand before distributing.")
+
     (lic / "scowl").mkdir()
     shutil.copy2(ROOT / "src" / NAME / "data" / "SCOWL-COPYRIGHT.txt", lic / "scowl")
 
@@ -267,7 +287,25 @@ def smoke_test(folder: Path) -> None:
                 sys.exit(f"Smoke test failed on {src.name}: EPUBCheck result {ec}.")
             if report["fidelity"]["main"]["match_ratio"] != 1.0:
                 sys.exit(f"Smoke test failed on {src.name}: text fidelity below 100%.")
-    print("Smoke test passed: both fixtures converted, verified, and validated.")
+        # The windowed program, through its window, on a copy (it writes beside the input).
+        src = Path(tmp) / "gui" / "styled.docx"
+        src.parent.mkdir()
+        shutil.copy2(fixtures[0], src)
+        proc = subprocess.run(
+            [str(folder / GUI_EXE), "--check", str(src)],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=600,
+        )
+        if proc.returncode not in (0, 1):
+            sys.exit(f"Smoke test failed on the windowed program: exit code {proc.returncode}.")
+        report = json.loads((src.parent / "styled.report.json").read_text(encoding="utf-8"))
+        ec = report["epubcheck"]
+        if not ec or not ec["ran"] or ec["errors"] or ec["warnings"]:
+            sys.exit(f"Smoke test failed on the windowed program: EPUBCheck result {ec}.")
+    print("Smoke test passed: both programs converted, verified, and validated.")
 
 
 def zip_folder(folder: Path) -> Path:

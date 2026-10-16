@@ -121,6 +121,8 @@ def run_epubcheck(tool: EpubCheckTool, epub: Path) -> EpubCheckResult:
         try:
             proc = subprocess.run(
                 cmd,
+                # Explicit, because a windowed program has no console handles to pass on.
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 timeout=TIMEOUT_SECONDS,

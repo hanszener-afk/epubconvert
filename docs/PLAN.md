@@ -208,6 +208,14 @@ Prompted by a rendered title page that was technically correct but ugly. Fidelit
 - Build versions are pinned (`packaging/requirements-build.txt`) so that a rebuilt program contains what was tested.
 - Size: about 180 MB unpacked, 125 MB zipped (Java runtime 55 MB, EPUBCheck and its libraries 35 MB, the rest Python libraries).
 
+### After milestone 5: a window (v0.6)
+
+- The brief ruled out a GUI; the author asked for one later, so that the converter can be used without a terminal. It is a thin layer (`novel2epub/gui.py`): a form that fills in the same `ConvertOptions` as the command line, runs the same pipeline on a background thread, and shows the same summary and report. Nothing about conversion or verification differs.
+- Toolkit: tkinter, from Python's standard library. No new dependency to vet; Tcl/Tk is under a BSD-style licence (shipped in the notices). It looks plain, but native enough on Windows. PySide6 (LGPL) would look better at the cost of about 80 MB and a licence to manage; not worth it for one form.
+- The report opens inside the program, because Windows often has no program associated with `.md` files. Messages that name command-line options (`--title`) are reworded to name the window's controls.
+- The Windows folder holds two programs sharing one set of libraries: `novel2epub-gui.exe` (no console) and `novel2epub.exe` (console). The build's smoke test runs a conversion through the windowed program's own window (`--check`), including EPUBCheck, because a program without a console can fail to start subprocesses that a console program starts fine; EPUBCheck is now started with an explicit empty input for that reason.
+- Fixed in passing: the end-of-run line counted only uncertain decisions as "need human review", while the report also counts warnings. Both now give the report's number.
+
 ### v2 direction (not in v1)
 
 The author wants template-driven output, like InDesign templates, as an alternative to cleaning up in Sigil after conversion. v1 prepares for this without building it: a small, stable, documented class vocabulary (docs/markup.md), all styling in one replaceable stylesheet, and XHTML laid out one block per line for hand editing.
