@@ -49,7 +49,8 @@ def _docx(tmp_path: Path) -> Path:
     d = Docx()
     d.media["rIdEmf"] = ("chart.emf", emf())
     d.add(p(r("Before the chart.")))
-    d.add(p(image_run("rIdEmf", 952500, 476250, "A small chart.")))
+    # 3 by 2 inches: larger than a scene-break ornament, so it stays an image.
+    d.add(p(image_run("rIdEmf", 2743200, 1828800, "A small chart.")))
     d.add(p(r("After the chart.")))
     return d.save(tmp_path / "emf.docx")
 
