@@ -379,7 +379,8 @@ class PdfStructurer:
             start = starts[n]
             end = starts[n + 1] if n + 1 < len(tops) else len(self.blocks)
             title = self._title(h.title_indices)
-            blocks = self._blocks(range(start, end), subs, title_parts)
+            opener = self._blocks(range(start, h.index), subs, title_parts)
+            blocks = self._blocks(range(h.index, end), subs, title_parts)
             has_children = n + 1 < len(tops) and tops[n + 1].depth > h.depth
             if not blocks and h.kind is not SectionKind.PART and not has_children:
                 self.diag.warn(
@@ -390,7 +391,9 @@ class PdfStructurer:
             named, _ = named_kind(self.blocks[h.index].text)
             sections.append(
                 (
-                    Section(h.kind, title, blocks, self.blocks[h.index].source, max(h.depth, 0)),
+                    Section(
+                        h.kind, title, blocks, self.blocks[h.index].source, max(h.depth, 0), opener
+                    ),
                     named,
                 )
             )
@@ -411,10 +414,22 @@ class PdfStructurer:
         return front, body, back
 
     def _section_starts(self, tops: list[_Heading]) -> list[int]:
-        """Each section starts at its heading. Text printed above a heading (such as
-        a quotation set above a chapter title) stays where it was printed, at the end
-        of the previous section: moving it would reorder the author's text."""
-        return [h.index for h in tops]
+        """Where each section starts. A quotation printed above a heading on the same
+        page (a document or epigraph set over a chapter title) opens that section and
+        is rendered before the title, so the author's order is kept exactly."""
+        starts = []
+        for n, h in enumerate(tops):
+            floor = tops[n - 1].index + 1 if n else 0
+            start = h.index
+            page = self.blocks[h.index].page
+            while (
+                start - 1 >= floor
+                and self.blocks[start - 1].quote
+                and self.blocks[start - 1].page == page
+            ):
+                start -= 1
+            starts.append(start)
+        return starts
 
     def _title(self, indices: list[int]) -> list[Inline]:
         out: list[Inline] = []
@@ -438,11 +453,18 @@ class PdfStructurer:
                 "content",
                 self.blocks[page_indices[0]].source,
             )
+            span = range(page_indices[0], page_indices[-1] + 1)
+            titles: set[int] = set()
+            if kind is SectionKind.TITLEPAGE:
+                # The largest type on a title page is the book's title.
+                biggest = max(page_indices, key=lambda i: self.blocks[i].size)
+                if self.blocks[biggest].size >= 1.4 * self.m.body_size:
+                    titles.add(biggest)
             out.append(
                 Section(
                     kind,
                     None,
-                    self._blocks(range(page_indices[0], page_indices[-1] + 1), subs, skip),
+                    self._blocks(span, subs, skip, titles),
                     self.blocks[page_indices[0]].source,
                 )
             )
@@ -475,7 +497,13 @@ class PdfStructurer:
 
     # --------------------------------------------------------------- blocks
 
-    def _blocks(self, indices: range, subs: dict[int, _Heading], skip: set[int]) -> list[Block]:
+    def _blocks(
+        self,
+        indices: range,
+        subs: dict[int, _Heading],
+        skip: set[int],
+        titles: frozenset[int] | set[int] = frozenset(),
+    ) -> list[Block]:
         out: list[Block] = []
         quote: list[Block] | None = None
         for i in indices:
@@ -524,6 +552,9 @@ class PdfStructurer:
                 )
                 out.append(SceneBreak(b.source))
             content = build_inlines(b.segments)
+            if i in titles:
+                out.append(Heading(content, 1, b.source))
+                continue
             if i in subs:
                 out.append(Heading(content, 2, b.source))
                 continue

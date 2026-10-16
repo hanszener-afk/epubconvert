@@ -58,6 +58,12 @@ blockquote {
   margin: 1em 1.5em;
 }
 
+/* Quoted letters, notices, and documents: unindented blocks with a little space. */
+blockquote p {
+  text-indent: 0;
+  margin: 0 0 0.5em 0;
+}
+
 blockquote.epigraph {
   margin: 1em 2em 2em 2em;
 }
@@ -105,4 +111,53 @@ ol.notes {
 
 ol.notes li {
   margin: 0 0 1em 0;
+}
+
+/* A chapter with no title still starts a little way down the page. */
+section.untitled {
+  padding-top: 2em;
+}
+
+/* The contents page: chapter titles carry their own numbers. */
+nav ol {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+nav ol ol {
+  padding-left: 1.5em;
+}
+
+/* Display pages: title page, half title, part openers, dedication, epigraph,
+   copyright. Centred, unindented, with space above. */
+
+section.titlepage,
+section.halftitle,
+section.part,
+section.dedication,
+section.epigraph {
+  text-align: center;
+  padding-top: 3em;
+}
+
+section.titlepage h1 {
+  margin: 0 0 1em 0;
+}
+
+section.titlepage p,
+section.halftitle p,
+section.part p,
+section.dedication p,
+section.epigraph p,
+section.copyright p {
+  text-indent: 0;
+}
+
+section.copyright p {
+  margin: 0 0 0.75em 0;
+}
+
+section.part blockquote,
+section.epigraph blockquote {
+  text-align: left;
 }

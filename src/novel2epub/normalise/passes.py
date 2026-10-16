@@ -66,6 +66,8 @@ def _keep_section(section: Section, diag: Diagnostics) -> bool:
 def _section(section: Section, diag: Diagnostics, smarten: bool, counts: _Counts) -> None:
     if section.title:
         section.title = _inlines(section.title, smarten, counts)
+    if section.opener:
+        section.opener = _blocks(section.opener, diag, smarten, counts, in_section=False)
     section.blocks = _blocks(section.blocks, diag, smarten, counts, in_section=True)
 
 

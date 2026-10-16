@@ -419,3 +419,38 @@ def test_parts_nest_chapters_in_nav_and_ncx() -> None:
         doc for _, doc in spine_docs(z) if doc.find("x:body/x:section", NS).get(EPUB_TYPE) == "part"
     ]
     assert len(part) == 2 and part[0].find("x:body/x:section", NS).get("role") == "doc-part"
+
+
+def test_opener_is_rendered_before_the_title_and_counted_in_order() -> None:
+    import io
+
+    from books import minimal_book, p
+
+    from novel2epub.ir import BlockQuote
+    from novel2epub.verify.text import epub_text, ir_text
+
+    book = minimal_book()
+    book.body[0].opener = [BlockQuote([p("A notice pinned above the chapter.")])]
+    data = build_epub(book, Diagnostics())
+    z = zipfile.ZipFile(io.BytesIO(data))
+    _, doc = spine_docs(z)[0]
+    section = doc.find("x:body/x:section", NS)
+    assert [etree.QName(c).localname for c in section][:2] == ["blockquote", "h1"]
+    assert epub_text(data).main == ir_text(book).main
+    assert epub_text(data).main.startswith("A notice pinned above the chapter. Chapter One")
+
+
+def test_title_page_has_a_real_title_and_a_class() -> None:
+    from books import minimal_book, p
+
+    from novel2epub.ir import Heading, Section, Text
+
+    book = minimal_book()
+    book.front = [
+        Section(SectionKind.TITLEPAGE, None, [Heading([Text("A Small Book")], 1), p("Ann Author")])
+    ]
+    z = build(book)
+    _, doc = spine_docs(z)[0]
+    section = doc.find("x:body/x:section", NS)
+    assert section.get("class") == "titlepage"
+    assert section.find("x:h1", NS).text == "A Small Book"

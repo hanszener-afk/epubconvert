@@ -28,6 +28,10 @@ OEBPS/Text/endnotes.xhtml       only if the book has endnotes or unreferenced no
 
 Each content file holds one `<section>` with `epub:type` and an ARIA `role` where one exists. Titled sections start with `<h1 id="title">`. Untitled ones carry `aria-label`.
 
+- Display pages carry a class naming their kind: `titlepage`, `halftitle`, `part`, `dedication`, `epigraph`, `copyright`. Other untitled sections carry `untitled`.
+- A title page's title is an `<h1>` inside the (untitled) section.
+- Text printed above a chapter's title (a quotation or document set over the heading) comes first in the section, before the `<h1>`, as in print.
+
 ## Blocks
 
 | Markup | Meaning |

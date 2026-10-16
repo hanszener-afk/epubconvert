@@ -139,7 +139,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     files["Styles/style.css"] = _stylesheet()
     manifest.append(package.ManifestItem("css", "Styles/style.css", "text/css"))
 
-    images_in_text = [b for s in book.sections() for b in _walk_blocks(s.blocks)]
+    images_in_text = [b for s in book.sections() for b in _walk_blocks(s.opener + s.blocks)]
     images_in_text += [b for n in book.notes.values() for b in _walk_blocks(n.blocks)]
     has_images = bool(images_in_text) or book.cover is not None
     all_alt = all(img.alt for img in images_in_text)
@@ -190,7 +190,7 @@ def _item_id_for_resource(resource_id: str) -> str:
 
 def _images(book: Book, diag: Diagnostics) -> tuple[dict[str, str], list[package.ManifestItem]]:
     """Validate referenced image resources. Returns hrefs (from Text/) and manifest items."""
-    used = {b.resource_id for s in book.sections() for b in _walk_blocks(s.blocks)}
+    used = {b.resource_id for s in book.sections() for b in _walk_blocks(s.opener + s.blocks)}
     used |= {b.resource_id for n in book.notes.values() for b in _walk_blocks(n.blocks)}
     if book.cover:
         used.add(book.cover.resource_id)
@@ -322,7 +322,11 @@ def _plan_notes(
     first_file: dict[str, str] = {}
     order: list[str] = []
     for section, name in sections:
-        refs = _refs_in_inlines(section.title or []) + note_refs_in_blocks(section.blocks)
+        refs = (
+            note_refs_in_blocks(section.opener)
+            + _refs_in_inlines(section.title or [])
+            + note_refs_in_blocks(section.blocks)
+        )
         for nid in refs:
             if nid not in book.notes:
                 raise ConversionError("note-missing", f"Reference to unknown note {nid!r}.")

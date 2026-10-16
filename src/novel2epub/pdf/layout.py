@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from novel2epub.diagnostics import Diagnostics
 from novel2epub.ir import PdfRef
 from novel2epub.normalise.inline import Segment, plain
+from novel2epub.normalise.scenebreaks import scene_break_confidence
 from novel2epub.pdf.extract import Line, Page
 from novel2epub.pdf.hyphenation import HYPHENS, Dehyphenator
 
@@ -123,11 +124,30 @@ class Layout:
         m = self.m
         mid = (ln.x0 + ln.x1) / 2
         width = m.right - m.left
+        # Symmetric margins of at least an em. A long symmetric line set smaller
+        # than the body is an indented quotation, not centred text.
+        # A line that starts exactly at the paragraph indent is a short paragraph
+        # that happens to sit near the middle.
+        at_indent = m.indent is not None and abs((ln.x0 - m.left) - m.indent) < 1.5
         return (
-            ln.x1 - ln.x0 < 0.8 * width
+            not at_indent
             and abs(mid - m.centre) < max(3.0, 0.03 * width)
-            and ln.x0 - m.left > 1.5 * m.body_size
-            and m.right - ln.x1 > 1.5 * m.body_size
+            and ln.x0 - m.left > m.body_size
+            and m.right - ln.x1 > m.body_size
+            and (ln.x1 - ln.x0 < 0.8 * width or ln.size >= m.body_size - 0.4)
+        )
+
+    def same_centred_block(self, prev: Line, ln: Line) -> bool:
+        """Consecutive centred lines in one style form one block (a title over two lines)."""
+        return (
+            self.centred(prev)
+            and self.centred(ln)
+            and abs(ln.size - prev.size) <= 0.4
+            and ln.all("bold") == prev.all("bold")
+            and ln.all("italic") == prev.all("italic")
+            and self._gap_ratio(prev, ln) <= 1.6
+            and not scene_break_confidence(ln.text.strip(), True)
+            and not scene_break_confidence(prev.text.strip(), True)
         )
 
     def quote(self, ln: Line) -> bool:
@@ -153,6 +173,8 @@ class Layout:
         return (prev.y1 - ln.y1) / (self.m.line_gap * scale)
 
     def new_block(self, prev: Line, ln: Line) -> bool:
+        if self.same_centred_block(prev, ln):
+            return False
         if self.centred(ln) or self.centred(prev):
             return True
         if self.quote(ln) != self.quote(prev) or abs(ln.size - prev.size) > 0.4:
@@ -232,7 +254,12 @@ class Layout:
         return lines
 
     def append_line(self, block: PdfBlock, ln: Line) -> None:
-        self.join_segments(block, self._segments(ln), ln)
+        if block.centred and block.lines:
+            # Centred lines were broken by the author, not by the measure: keep the break.
+            block.segments.append(Segment("", frozenset(), None, "break"))
+            block.segments.extend(self._segments(ln))
+        else:
+            self.join_segments(block, self._segments(ln), ln)
         block.lines.append(ln)
 
     def join_segments(self, block: PdfBlock, new: list[Segment], ln: Line) -> None:

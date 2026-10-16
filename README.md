@@ -122,7 +122,8 @@ python -m venv .venv
 .venv/bin/pip install -e ".[dev]"      # Windows: .venv\Scripts\pip
 .venv/bin/pytest
 .venv/bin/ruff check src tests scripts && .venv/bin/mypy
-python scripts/make_fixtures.py         # regenerate tests/fixtures/docx (needs LibreOffice)
+python scripts/make_fixtures.py         # regenerate tests/fixtures (needs LibreOffice)
+python scripts/preview.py book.epub previews --pages 1,2,3   # render pages to PNG (needs playwright)
 ```
 
 The `dev` extra installs the `epubcheck` package (BSD-3-Clause), which bundles EPUBCheck 5.3.0. To use a different jar, set `NOVEL2EPUB_EPUBCHECK` to its path. EPUBCheck tests are skipped if Java or the jar cannot be found.

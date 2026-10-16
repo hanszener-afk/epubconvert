@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from novel2epub.epub.xhtml import plain_text
-from novel2epub.ir import Italic, Paragraph, SceneBreak, SectionKind, Span
+from novel2epub.ir import BlockQuote, Heading, Italic, Paragraph, SceneBreak, SectionKind, Span
 from novel2epub.pipeline import ConvertOptions, ExitCode, convert
 from novel2epub.verify.epubcheck import find_epubcheck
 
@@ -95,6 +95,12 @@ def test_real_pdf_structure(tmp_path: Path) -> None:
     assert len(chapters) >= 60  # every numbered chapter in every part, plus epilogue sections
     assert all(s.depth == 1 for s in chapters)
     assert plain_text(chapters[0].title or []) == "1. The Ditch"
+    # The quest board printed above the first chapter's title opens that chapter.
+    assert isinstance(chapters[0].opener[0], BlockQuote)
+    part_one = next(s for s in book.body if s.kind is SectionKind.PART)
+    assert part_one.blocks == []
+    front_title = book.front[0].blocks[0]
+    assert isinstance(front_title, Heading) and "Catgirl" in plain_text(front_title.content)
     assert kinds[-1] is SectionKind.CHAPTER and book.body[-1].depth == 1  # inside the epilogue
 
 

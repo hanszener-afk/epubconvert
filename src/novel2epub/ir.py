@@ -148,7 +148,7 @@ class Heading:
     """A heading inside a section (the section title is Section.title)."""
 
     content: list[Inline]
-    level: int = 2  # 2..6; level 1 is reserved for section titles
+    level: int = 2  # 2..6; 1 only in an untitled section, such as a title page's title
     source: SourceRef | None = None
 
 
@@ -243,6 +243,9 @@ class Section:
     blocks: list[Block]
     source: SourceRef | None = None
     depth: int = 0  # 1 for a chapter inside a part; nests it in the contents
+    # Blocks printed above the title (a quotation set over a chapter heading).
+    # Rendered before the title, so the author's order is kept.
+    opener: list[Block] = field(default_factory=list)
 
 
 @dataclass(slots=True)

@@ -83,6 +83,7 @@ def ir_text(book: Book) -> ExtractedText:
     main: list[str] = []
     refs: list[str] = []
     for section in book.sections():
+        _blocks(section.opener, main, refs)
         _inline(section.title or [], main, refs)
         main.append(" ")
         _blocks(section.blocks, main, refs)

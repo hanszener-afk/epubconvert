@@ -225,3 +225,27 @@ def test_contents_entries() -> None:
         assert TOC_ENTRY.match(text), text
     for text in ("He was 3", "It was 1810", "A sentence that ends with a year 1810."):
         assert not TOC_ENTRY.match(text), text
+
+
+# --- centred text --------------------------------------------------------
+
+
+def test_wide_centred_title_lines_form_one_block() -> None:
+    m = Metrics(10.5, 54, 378, 15.2, 15, True)
+    lines = [
+        ln(1, 413, "I Will Not Be Buying", 71, 361, size=32),
+        ln(1, 375, "the Catgirl", 140, 292, size=32),
+        ln(1, 326, "A novel in ten parts, with a prologue and an epilogue.", 82, 350, size=12.5),
+    ]
+    blocks = Layout(m, Dehyphenator(Counter()), Diagnostics()).page_blocks(
+        Page(1, 432, 648, lines, [])
+    )
+    assert [b.centred for b in blocks] == [True, True]
+    assert [s.kind for s in blocks[0].segments].count("break") == 1
+
+
+def test_short_paragraph_at_the_indent_is_not_centred() -> None:
+    m = Metrics(10.5, 54, 378, 15.2, 15, True)
+    layout = Layout(m, Dehyphenator(Counter()), Diagnostics())
+    # Starts exactly at the first-line indent and happens to end near the middle.
+    assert not layout.centred(ln(1, 500, "\u201cWell,\u201d said James Henry.", 69, 363, size=10.5))

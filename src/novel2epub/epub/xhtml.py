@@ -85,6 +85,12 @@ SECTION_SEMANTICS: dict[SectionKind, Semantics] = {
     SectionKind.OTHER: Semantics(None, None, "Section {n}"),
 }
 
+# Sections whose pages are laid out differently from running text.
+STYLED_SECTIONS = {
+    SectionKind.TITLEPAGE, SectionKind.HALFTITLE, SectionKind.COPYRIGHT,
+    SectionKind.DEDICATION, SectionKind.EPIGRAPH, SectionKind.PART,
+}  # fmt: skip
+
 _CONTAINERS = {
     "html", "head", "body", "section", "blockquote", "div", "aside", "figure",
     "ol", "li", "nav",
@@ -267,7 +273,7 @@ def render_blocks(parent: etree._Element, blocks: list[Block], ctx: RenderContex
             p.text = SCENE_BREAK_TEXT
             first = True
         elif isinstance(block, Heading):
-            level = min(max(block.level, 2), 6)
+            level = min(max(block.level, 1), 6)
             h = sub(parent, f"h{level}")
             render_inlines(h, block.content, ctx)
             first = True
@@ -360,10 +366,16 @@ def render_section(
     body.set(EPUB_TYPE, matter)
     sec = sub(body, "section")
     sem = SECTION_SEMANTICS[section.kind]
+    if section.kind in STYLED_SECTIONS:
+        sec.set("class", section.kind.value)
+    elif not section.title:
+        sec.set("class", "untitled")
     if sem.epub_type:
         sec.set(EPUB_TYPE, sem.epub_type)
     if sem.role:
         sec.set("role", sem.role)
+    if section.opener:
+        render_blocks(sec, section.opener, ctx)
     if section.title:
         sec.set("aria-labelledby", "title")
         h1 = sub(sec, "h1")

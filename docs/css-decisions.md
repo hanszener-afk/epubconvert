@@ -16,6 +16,9 @@ None of this has been verified on physical devices yet. The reasons come from th
 | `page-break-after: avoid` on headings | Stops a heading being stranded at the bottom of a page. Ignored harmlessly where unsupported. |
 | `.sc { font-variant: small-caps }` | Small caps from the manuscript. If unsupported, the text shows in normal case, which loses nothing. |
 | `.caps { text-transform: uppercase }` | Word's "All caps" formatting. The text keeps its typed case; only the display changes, as in Word. |
+| `blockquote p { text-indent: 0; margin-bottom: 0.5em }` | Quoted letters, notices, and inventories read as blocks, as they are usually printed. |
+| Display pages (`section.titlepage`, `.part`, `.dedication`, `.epigraph`, `.halftitle`, `.copyright`) | Centred, unindented, with `padding-top: 3em`. Without this, a title page is a column of left-aligned bold paragraphs. |
+| `nav ol { list-style-type: none }` | Chapter titles often carry their own numbers ("1. The Ditch"); list numbering would print "1. 1. The Ditch". |
 | `img { max-width: 100% }` | Images never overflow the screen. Percentages, not pixels. |
 | `ol.notes { list-style-type: none }` | Endnotes carry their own backlinked marker; this avoids a second number. If CSS is stripped, the number appears twice, which is ugly but loses nothing. |
 

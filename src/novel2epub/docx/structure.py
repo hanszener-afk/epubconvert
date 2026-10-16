@@ -409,7 +409,13 @@ class Structurer:
                 "content",
                 self.paras[content[0]].source,
             )
-            blocks = self._blocks(range(chunk[0], chunk[-1] + 1), breaks, sub_heads, set())
+            titles: set[int] = set()
+            if kind is SectionKind.TITLEPAGE:
+                titles = {
+                    i for i in content
+                    if any(n == "title" or n.endswith(" title") for n in self.paras[i].props.style_names)
+                }  # fmt: skip
+            blocks = self._blocks(range(chunk[0], chunk[-1] + 1), breaks, sub_heads, set(), titles)
             out.append(Section(kind, None, blocks, self.paras[content[0]].source))
         return out
 
@@ -481,7 +487,12 @@ class Structurer:
     # --------------------------------------------------------------- blocks
 
     def _blocks(
-        self, indices: range, breaks: set[int], sub_heads: dict[int, _Heading], skip: set[int]
+        self,
+        indices: range,
+        breaks: set[int],
+        sub_heads: dict[int, _Heading],
+        skip: set[int],
+        titles: set[int] | None = None,
     ) -> list[Block]:
         out: list[Block] = []
         quote: list[Block] | None = None
@@ -529,7 +540,7 @@ class Structurer:
                     "scene-break", "Scene break from a top border.", 0.7, "border", p.source
                 )
                 out.append(SceneBreak(p.source))
-            block = self._text_block(p, sub_heads.get(i))
+            block = self._text_block(p, sub_heads.get(i), bool(titles) and i in (titles or set()))
             if block is not None:
                 if is_quote:
                     if quote is None:
@@ -551,11 +562,15 @@ class Structurer:
                 out.append(SceneBreak(p.source))
         return out
 
-    def _text_block(self, p: RawPara, heading: _Heading | None) -> Block | None:
+    def _text_block(
+        self, p: RawPara, heading: _Heading | None, title: bool = False
+    ) -> Block | None:
         segs: list[Segment] = p.segments
         if not p.text.strip() and not p.has_noteref:
             return None
         content = build_inlines(segs)
+        if title:
+            return Heading(content, level=1, source=p.source)
         if heading is not None:
             return Heading(content, level=min(heading.level + 1, 6), source=p.source)
         align = {"center": Align.CENTRE, "right": Align.END, "end": Align.END}.get(

@@ -173,7 +173,7 @@ As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip de
 
 - Parts are supported (asked and agreed): `SectionKind.PART` plus `Section.depth`, giving a two-level contents and NCX. Books without parts are unchanged.
 - Side margins added (`body { margin: 0 5% }`) after the first real EPUB ran to the screen edge in a reader that adds none.
-- Text printed above a chapter heading (a quotation or "document" set before the title) stays where it was printed. Moving it below the heading as an epigraph would reorder the author's text, which the fidelity check rightly flagged.
+- Text printed above a chapter heading (a quotation or "document" set before the title) is never moved below the heading: that would reorder the author's text, which the fidelity check rightly flagged. (Refined after milestone 4: it becomes the section's `opener`, rendered before the title in the same file, so it stays with its chapter and in order.)
 - The fidelity comparison for PDF is neutral to hyphenation ("mi-litia" = "militia") and to dash spacing at line ends; dehyphenation choices are logged decisions instead. Removals are cut from the PDFium reference page by page.
 - PDFium reports line-break hyphens as U+0002 or U+FFFE depending on version; both are mapped back to hyphens in the reference.
 - An outline entry with children is a part, unless it is a named section (an Epilogue with sub-sections keeps its kind and nests its children).
@@ -186,6 +186,14 @@ As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip de
 - PDF footnotes: the lines removed from the main text are the reference for the notes, so note text is checked too. Notes are numbered afresh in the EPUB; symbol markers (*, dagger) are kept.
 - Chapter detection order for PDF: outline, printed contents, `--chapter-regex`, "Chapter N" patterns, large type. The brief put large type before patterns; patterns are more specific, so they are tried first, and each heading still records its method.
 - Text printed above a chapter heading stays where it was printed (milestone 3), and a gap before a centred line ("THE END") is not a scene break.
+
+### Appearance pass (after milestone 4)
+
+Prompted by a rendered title page that was technically correct but ugly. Fidelity and EPUBCheck say nothing about appearance, so `scripts/preview.py` now renders EPUB pages to PNG in Chromium for review.
+
+- PDF centring: symmetric margins of at least an em, and not set smaller than the body (a smaller symmetric block is a quotation); a line starting exactly at the paragraph indent is never centred. Consecutive centred lines in one style are one block with their line breaks kept.
+- Title pages: the largest type (PDF) or the Title style (DOCX) becomes an `<h1>`. Display pages get a class and are centred with space above.
+- Contents page: no list numbering (titles carry their own). Quoted documents: unindented blocks.
 
 ### v2 direction (not in v1)
 
