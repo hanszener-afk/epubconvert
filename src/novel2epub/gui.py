@@ -437,7 +437,7 @@ class App:
         win = tk.Toplevel(self.root)
         win.title(self.report_path.name)
         win.geometry("760x640")
-        text = tk.Text(win, wrap="word", padx=10, pady=10)
+        text = tk.Text(win, wrap="word", padx=10, pady=10, font="TkDefaultFont")
         bar = ttk.Scrollbar(win, command=text.yview)
         text.configure(yscrollcommand=bar.set)
         bar.pack(side="right", fill="y")
