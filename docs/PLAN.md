@@ -1,6 +1,6 @@
 # novel2epub: Step 0 plan (awaiting approval)
 
-Status: approved 2026-10-16. Milestones 1 and 2 implemented.
+Status: approved 2026-10-16. Milestones 1 to 3 implemented.
 
 ## 1. Language and runtime
 
@@ -67,8 +67,9 @@ Expected differences are reconciled from the Diagnostics log, not hidden: every 
 |---|---|---|
 | lxml | BSD-3-Clause (bundles libxml2/libxslt, MIT) | OOXML parsing where python-docx falls short; XHTML/OPF generation |
 | ~~python-docx~~ | MIT | Dropped in milestone 2: footnotes, endnotes, tracked changes, fields, VML, and style resolution all needed raw lxml, which left python-docx doing nothing useful |
-| pdfminer.six | MIT | Glyph-level extraction: character, font name, size, bbox; outline/bookmarks |
+| pdfminer.six | MIT | Glyph-level extraction: character, font name, size, bbox |
 | pypdfium2 | Apache-2.0 or BSD-3-Clause (PDFium: BSD-3/Apache-2.0 with permissive third-party components) | Independent reference text for the fidelity check; PDF classification (text vs scanned); rendering for OCR if ever added |
+| SCOWL word list (data, bundled) | Permissive (SCOWL and its public-domain and notice-only sources) | Dehyphenation evidence. Notices shipped in `src/novel2epub/data/SCOWL-COPYRIGHT.txt` |
 | Pillow | MIT-CMU (HPND) | Cover and image validation (format, dimensions, colour mode) |
 | PyYAML | MIT | Only if you want YAML metadata (see question 3). TOML needs nothing (`tomllib`) |
 
@@ -167,6 +168,15 @@ As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip de
 - A single empty paragraph is not a scene break (reported for review); two or more are, when the manuscript normally has none between paragraphs.
 - Word's "All caps" keeps the typed characters and displays them in capitals through CSS, so the text survives exactly.
 - Note references never carry the formatting of Word's footnote-reference style (it double-superscripted them).
+
+### Milestone 3 decisions
+
+- Parts are supported (asked and agreed): `SectionKind.PART` plus `Section.depth`, giving a two-level contents and NCX. Books without parts are unchanged.
+- Side margins added (`body { margin: 0 5% }`) after the first real EPUB ran to the screen edge in a reader that adds none.
+- Text printed above a chapter heading (a quotation or "document" set before the title) stays where it was printed. Moving it below the heading as an epigraph would reorder the author's text, which the fidelity check rightly flagged.
+- The fidelity comparison for PDF is neutral to hyphenation ("mi-litia" = "militia") and to dash spacing at line ends; dehyphenation choices are logged decisions instead. Removals are cut from the PDFium reference page by page.
+- PDFium reports line-break hyphens as U+0002 or U+FFFE depending on version; both are mapped back to hyphens in the reference.
+- An outline entry with children is a part, unless it is a named section (an Epilogue with sub-sections keeps its kind and nests its children).
 
 ### v2 direction (not in v1)
 

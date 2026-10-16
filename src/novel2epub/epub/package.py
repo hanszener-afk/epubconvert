@@ -27,6 +27,18 @@ class ManifestItem:
 class TocEntry:
     label: str
     href: str  # relative to the OPF
+    depth: int = 0
+
+
+def _nest(entries: list[TocEntry]) -> list[tuple[TocEntry, list[TocEntry]]]:
+    """Group depth-1 entries under the depth-0 entry before them."""
+    out: list[tuple[TocEntry, list[TocEntry]]] = []
+    for e in entries:
+        if e.depth > 0 and out:
+            out[-1][1].append(e)
+        else:
+            out.append((e, []))
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,10 +205,17 @@ def nav_xhtml(
     nav.set("role", "doc-toc")
     sub(nav, "h1").text = "Contents"
     ol = sub(nav, "ol")
-    for entry in toc:
-        a = sub(sub(ol, "li"), "a")
+    for entry, children in _nest(toc):
+        li = sub(ol, "li")
+        a = sub(li, "a")
         a.set("href", entry.href)
         a.text = entry.label
+        if children:
+            inner = sub(li, "ol")
+            for child in children:
+                ca = sub(sub(inner, "li"), "a")
+                ca.set("href", child.href)
+                ca.text = child.label
     lm = sub(body, "nav")
     lm.set(EPUB_TYPE, "landmarks")
     lm.set("hidden", "hidden")
@@ -216,9 +235,10 @@ def toc_ncx(meta: Metadata, toc: list[TocEntry]) -> bytes:
     ncx.set("version", "2005-1")
     ncx.set(XML_LANG, meta.language)
     head = etree.SubElement(ncx, f"{{{NCX_NS}}}head")
+    nested = _nest(toc)
     for name, content in (
         ("dtb:uid", meta.identifier),
-        ("dtb:depth", "1"),
+        ("dtb:depth", "2" if any(children for _, children in nested) else "1"),
         ("dtb:totalPageCount", "0"),
         ("dtb:maxPageNumber", "0"),
     ):
@@ -228,13 +248,23 @@ def toc_ncx(meta: Metadata, toc: list[TocEntry]) -> bytes:
     title = etree.SubElement(ncx, f"{{{NCX_NS}}}docTitle")
     etree.SubElement(title, f"{{{NCX_NS}}}text").text = meta.title
     nav_map = etree.SubElement(ncx, f"{{{NCX_NS}}}navMap")
-    for n, entry in enumerate(toc, 1):
-        point = etree.SubElement(nav_map, f"{{{NCX_NS}}}navPoint")
-        point.set("id", f"navpoint-{n}")
-        point.set("playOrder", str(n))
-        label = etree.SubElement(point, f"{{{NCX_NS}}}navLabel")
+    order = 0
+
+    def point(parent: etree._Element, entry: TocEntry) -> etree._Element:
+        nonlocal order
+        order += 1
+        el = etree.SubElement(parent, f"{{{NCX_NS}}}navPoint")
+        el.set("id", f"navpoint-{order}")
+        el.set("playOrder", str(order))
+        label = etree.SubElement(el, f"{{{NCX_NS}}}navLabel")
         etree.SubElement(label, f"{{{NCX_NS}}}text").text = entry.label
-        etree.SubElement(point, f"{{{NCX_NS}}}content").set("src", entry.href)
+        etree.SubElement(el, f"{{{NCX_NS}}}content").set("src", entry.href)
+        return el
+
+    for entry, children in nested:
+        parent = point(nav_map, entry)
+        for child in children:
+            point(parent, child)
     _indent(ncx)
     out: bytes = etree.tostring(ncx, xml_declaration=True, encoding="utf-8")
     return out + b"\n"

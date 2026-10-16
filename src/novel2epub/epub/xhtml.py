@@ -65,6 +65,7 @@ class Semantics:
 
 SECTION_SEMANTICS: dict[SectionKind, Semantics] = {
     SectionKind.CHAPTER: Semantics("chapter", "doc-chapter", "Chapter {n}"),
+    SectionKind.PART: Semantics("part", "doc-part", "Part {n}"),
     SectionKind.PROLOGUE: Semantics("prologue", "doc-prologue", "Prologue"),
     SectionKind.EPILOGUE: Semantics("epilogue", "doc-epilogue", "Epilogue"),
     SectionKind.TITLEPAGE: Semantics("titlepage", None, "Title Page"),

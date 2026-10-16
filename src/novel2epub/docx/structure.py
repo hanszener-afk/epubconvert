@@ -29,72 +29,22 @@ from novel2epub.ir import (
     Section,
     SectionKind,
 )
+from novel2epub.normalise.headings import (
+    BACK,
+    BARE_NUMBER,
+    BARE_WORD_NUMBER,
+    CHAPTER_PATTERN,
+    COPYRIGHT_RE,
+    STORY,
+    named_kind,
+    norm_name,
+)
 from novel2epub.normalise.inline import Segment, build_inlines
 from novel2epub.normalise.scenebreaks import scene_break_confidence
 
-NUMBER_WORDS = [
-    "one",
-    "two",
-    "three",
-    "four",
-    "five",
-    "six",
-    "seven",
-    "eight",
-    "nine",
-    "ten",
-    "eleven",
-    "twelve",
-    "thirteen",
-    "fourteen",
-    "fifteen",
-    "sixteen",
-    "seventeen",
-    "eighteen",
-    "nineteen",
-    "twenty",
-    "thirty",
-    "forty",
-    "fifty",
-    "sixty",
-    "seventy",
-    "eighty",
-    "ninety",
-    "hundred",
-]
-_WORDS = "|".join(NUMBER_WORDS)
-_NUM = rf"(\d{{1,3}}|[ivxlcdm]{{1,7}}|(?:{_WORDS})(?:[- ](?:{_WORDS}))*)"
-CHAPTER_PATTERN = re.compile(rf"^(chapter|chap\.)\s+{_NUM}\b", re.IGNORECASE)
-BARE_NUMBER = re.compile(r"^(\d{1,3}|[IVXLC]{1,7})\.?$")
-BARE_WORD_NUMBER = re.compile(
-    rf"^(?:{'|'.join(NUMBER_WORDS)})(?:[- ](?:{'|'.join(NUMBER_WORDS)}))*$", re.IGNORECASE
-)
-
-SECTION_NAMES: dict[str, SectionKind | None] = {
-    "prologue": SectionKind.PROLOGUE,
-    "epilogue": SectionKind.EPILOGUE,
-    "dedication": SectionKind.DEDICATION,
-    "epigraph": SectionKind.EPIGRAPH,
-    "foreword": SectionKind.FOREWORD,
-    "preface": SectionKind.PREFACE,
-    "introduction": SectionKind.INTRODUCTION,
-    "acknowledgements": SectionKind.ACKNOWLEDGEMENTS,
-    "acknowledgments": SectionKind.ACKNOWLEDGEMENTS,
-    "afterword": SectionKind.AFTERWORD,
-    "about the author": SectionKind.ABOUT_AUTHOR,
-    "copyright": SectionKind.COPYRIGHT,
-    "contents": None,  # a typed table of contents: replaced by the generated one
-    "table of contents": None,
-}
-STORY = {SectionKind.CHAPTER, SectionKind.PROLOGUE, SectionKind.EPILOGUE}
-BACK = {
-    SectionKind.ACKNOWLEDGEMENTS, SectionKind.AFTERWORD, SectionKind.ABOUT_AUTHOR,
-    SectionKind.ALSO_BY, SectionKind.OTHER,
-}  # fmt: skip
 QUOTE_STYLES = ("quote", "block text", "intense quote", "block quote", "blockquote")
 ORNAMENT_MAX_CX = int(2.5 * 914400)
 ORNAMENT_MAX_CY = 914400
-COPYRIGHT_RE = re.compile(r"\u00a9|\bcopyright\b|all rights reserved|\bISBN\b", re.IGNORECASE)
 
 
 @dataclass
@@ -104,28 +54,6 @@ class _Heading:
     method: str
     confidence: float
     title_indices: list[int] = field(default_factory=list)
-
-
-def _norm_name(text: str) -> str:
-    t = re.sub(r"[\s\u00a0]+", " ", text).strip().lower().rstrip(".:")
-    return t.replace("\u2019", "'")
-
-
-def _named_kind(title: str) -> tuple[bool, SectionKind | None]:
-    """(is a known name, kind). Kind None with True means a typed contents list."""
-    name = _norm_name(title)
-    if name in SECTION_NAMES:
-        return True, SECTION_NAMES[name]
-    if name.startswith("also by"):
-        return True, SectionKind.ALSO_BY
-    if name in (
-        "author's note",
-        "a note from the author",
-        "note from the author",
-        "author's afterword",
-    ):
-        return True, SectionKind.OTHER
-    return False, SectionKind.CHAPTER
 
 
 def _short(text: str) -> bool:
@@ -213,7 +141,7 @@ class Structurer:
             text = p.text.strip()
             if self.kind[i] != "text" or not _short(text):
                 continue
-            named, _ = _named_kind(text)
+            named, _ = named_kind(text)
             if CHAPTER_PATTERN.match(text) or named:
                 conf = 0.85
             elif (BARE_NUMBER.match(text) or BARE_WORD_NUMBER.match(text)) and (
@@ -297,7 +225,7 @@ class Structurer:
             )  # fmt: skip
             if nxt is not None and self.kind[nxt] == "text" and nxt not in candidates:
                 run = run[:-1]
-            named, kind = _named_kind(self.paras[run[0].index].text)
+            named, kind = named_kind(self.paras[run[0].index].text)
             if named and kind is None:
                 drop.update(h.index for h in run[1:])
             else:
@@ -386,7 +314,7 @@ class Structurer:
         sections: list[tuple[Section, bool]] = []  # (section, has a known name)
         for n, h in enumerate(chapter_heads):
             end = chapter_heads[n + 1].index if n + 1 < len(chapter_heads) else len(self.paras)
-            named, kind = _named_kind(self.paras[h.index].text)
+            named, kind = named_kind(self.paras[h.index].text)
             if named and kind is None:
                 if self._is_contents_list(range(h.index + 1, end)):
                     self._remove_range(range(h.index, end), "manual-toc")
@@ -490,7 +418,7 @@ class Structurer:
         joined = " ".join(texts)
         if any("title" in self.paras[i].props.style_names for i in content):
             return SectionKind.TITLEPAGE, 0.9
-        if self.title and any(_norm_name(t) == _norm_name(self.title) for t in texts):
+        if self.title and any(norm_name(t) == norm_name(self.title) for t in texts):
             return SectionKind.TITLEPAGE, 0.8
         if COPYRIGHT_RE.search(joined):
             return SectionKind.COPYRIGHT, 0.85

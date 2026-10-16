@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "novel2epub"
-version = "0.2.0"
+version = "0.3.0"
 description = "Convert DOCX and PDF novel manuscripts to EPUB 3, with a text-fidelity check."
 readme = "README.md"
 license = "MIT"
@@ -12,6 +12,8 @@ requires-python = ">=3.11"
 dependencies = [
     "lxml>=5.0",
     "Pillow>=10.0",
+    "pdfminer.six>=20231228",
+    "pypdfium2>=4.30",
 ]
 
 [project.optional-dependencies]
@@ -31,7 +33,7 @@ novel2epub = "novel2epub.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-novel2epub = ["epub/style.css"]
+novel2epub = ["epub/style.css", "data/*.gz", "data/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -56,5 +58,5 @@ warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
 # lxml-stubs is unmaintained and wrong for lxml 5+ (e.g. default-namespace nsmaps).
-module = ["lxml", "lxml.*"]
+module = ["lxml", "lxml.*", "pdfminer", "pdfminer.*", "pypdfium2", "pypdfium2.*"]
 ignore_missing_imports = true

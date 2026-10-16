@@ -393,3 +393,29 @@ def test_section_kinds_cover_every_enum_value() -> None:
     from novel2epub.epub.xhtml import SECTION_SEMANTICS
 
     assert set(SECTION_SEMANTICS) == set(SectionKind)
+
+
+def test_parts_nest_chapters_in_nav_and_ncx() -> None:
+    from books import parts_book
+
+    z = build(parts_book())
+    path, opf = opf_of(z)
+    base = path.rsplit("/", 1)[0] + "/"
+    nav_href = opf.xpath("//opf:item[@properties='nav']/@href", namespaces=NS)[0]
+    nav = etree.fromstring(z.read(base + nav_href))
+    top = nav.xpath("//x:nav[@epub:type='toc']/x:ol/x:li/x:a/text()", namespaces=NS)
+    assert top == ["Prologue", "Part One", "Part Two", "Epilogue"]
+    nested = nav.xpath(
+        "//x:nav[@epub:type='toc']/x:ol/x:li[x:a='Part One']/x:ol/x:li/x:a/text()", namespaces=NS
+    )
+    assert nested == ["1. The Ditch", "2. Registration"]
+    ncx_href = opf.xpath("//opf:item[@media-type='application/x-dtbncx+xml']/@href", namespaces=NS)
+    ncx = etree.fromstring(z.read(base + ncx_href[0]))
+    assert ncx.xpath("//ncx:meta[@name='dtb:depth']/@content", namespaces=NS) == ["2"]
+    assert len(ncx.xpath("//ncx:navMap/ncx:navPoint", namespaces=NS)) == 4
+    orders = [int(o) for o in ncx.xpath("//ncx:navPoint/@playOrder", namespaces=NS)]
+    assert sorted(orders) == list(range(1, 8))
+    part = [
+        doc for _, doc in spine_docs(z) if doc.find("x:body/x:section", NS).get(EPUB_TYPE) == "part"
+    ]
+    assert len(part) == 2 and part[0].find("x:body/x:section", NS).get("role") == "doc-part"

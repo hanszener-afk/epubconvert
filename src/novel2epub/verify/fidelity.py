@@ -40,11 +40,20 @@ _QUOTE_FOLD = str.maketrans(
 )  # fmt: skip
 
 
-def tokens(text: str, fold_quotes: bool = False) -> list[str]:
+_INNER_HYPHEN = re.compile(r"(?<=\w)[-\u2010] ?(?=\w)")
+_DASH = re.compile(r" ?([\u2014\u2013]) ?")
+
+
+def tokens(text: str, fold_quotes: bool = False, pdf_mode: bool = False) -> list[str]:
+    """Word tokens. pdf_mode makes hyphenation and line-end dash joins neutral:
+    "mi-litia", "mi- litia", and "militia" compare equal, as do "word\u2014word"
+    and "word\u2014 word". Dehyphenation choices are reported as decisions instead."""
     text = normalise(text)
     if fold_quotes:
         text = text.translate(_QUOTE_FOLD)
-    return text.split(" ") if text else []
+    if pdf_mode:
+        text = _DASH.sub(r" \1 ", _INNER_HYPHEN.sub("", text)).strip()
+    return text.split() if text else []
 
 
 def subtract_removals(text: str, removals: list[tuple[str, str]]) -> tuple[str, list[str]]:
@@ -141,12 +150,14 @@ def compare(
     output: str,
     removals: list[tuple[str, str]] | None = None,
     fold_quotes: bool = False,
+    pdf_mode: bool = False,
 ) -> FidelityResult:
     """Compare reference and output text, after cutting logged removals from the reference."""
     unmatched: list[str] = []
     if removals:
         reference, unmatched = subtract_removals(reference, removals)
-    ref, out = tokens(reference, fold_quotes), tokens(output, fold_quotes)
+    ref = tokens(reference, fold_quotes, pdf_mode)
+    out = tokens(output, fold_quotes, pdf_mode)
     matched = 0
     missing: list[Hunk] = []
     added: list[Hunk] = []

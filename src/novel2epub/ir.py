@@ -218,6 +218,7 @@ class Resource:
 
 class SectionKind(Enum):
     CHAPTER = "chapter"
+    PART = "part"  # a part title page; the chapters after it have depth 1
     PROLOGUE = "prologue"
     EPILOGUE = "epilogue"
     TITLEPAGE = "titlepage"
@@ -241,6 +242,7 @@ class Section:
     title: list[Inline] | None
     blocks: list[Block]
     source: SourceRef | None = None
+    depth: int = 0  # 1 for a chapter inside a part; nests it in the contents
 
 
 @dataclass(slots=True)

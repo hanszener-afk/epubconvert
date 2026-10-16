@@ -183,3 +183,20 @@ def full_book() -> Book:
         resources=resources,
         cover=Cover("cover", alt="Cover of The Lighthouse Keeper\u2019s Daughter"),
     )
+
+
+def parts_book() -> Book:
+    """Two parts whose chapter numbering restarts, a prologue, and an epilogue."""
+    book = minimal_book()
+    book.metadata.title = "A Book in Parts"
+    ch = lambda t: Section(SectionKind.CHAPTER, [Text(t)], [p(f"Text of {t}.")], depth=1)  # noqa: E731
+    book.body = [
+        Section(SectionKind.PROLOGUE, [Text("Prologue")], [p("Before.")]),
+        Section(SectionKind.PART, [Text("Part One")], []),
+        ch("1. The Ditch"),
+        ch("2. Registration"),
+        Section(SectionKind.PART, [Text("Part Two")], [p("A part epigraph.")]),
+        ch("1. Winter"),
+        Section(SectionKind.EPILOGUE, [Text("Epilogue")], [p("After.")]),
+    ]
+    return book

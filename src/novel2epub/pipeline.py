@@ -13,12 +13,14 @@ from PIL import Image as PILImage
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.docx import reader as docx_reader
 from novel2epub.epub.writer import build_epub
-from novel2epub.ir import Book, Cover, DocxRef, Resource
+from novel2epub.ir import Book, Cover, DocxRef, PdfRef, Resource
 from novel2epub.metadata import apply_overrides, load_meta_file, resolve
 from novel2epub.normalise.passes import normalise_book
+from novel2epub.pdf import reader as pdf_reader
 from novel2epub.verify.epubcheck import EpubCheckResult, find_epubcheck, run_epubcheck
-from novel2epub.verify.fidelity import FidelityResult, compare
+from novel2epub.verify.fidelity import FidelityResult, compare, normalise, subtract_removals
 from novel2epub.verify.reference_docx import docx_reference_text
+from novel2epub.verify.reference_pdf import pdf_reference_pages
 from novel2epub.verify.text import epub_text, ir_text
 
 # Removal kinds whose text never appears in the reference text.
@@ -100,6 +102,22 @@ def _removals(diag: Diagnostics, notes: bool) -> list[tuple[str, str]]:
     return [item for _, item in sorted(picked)]
 
 
+def _pdf_reference(path: Path, diag: Diagnostics) -> tuple[str, list[str]]:
+    """The PDF reference text, with each page's logged removals cut from that page."""
+    by_page: dict[int, list[tuple[str, str]]] = {}
+    for rm in diag.removals:
+        if rm.kind in NOT_IN_REFERENCE or not rm.text or not isinstance(rm.source, PdfRef):
+            continue
+        by_page.setdefault(rm.source.page, []).append((rm.text, rm.context))
+    texts: list[str] = []
+    unmatched: list[str] = []
+    for number, text in enumerate(pdf_reference_pages(path), start=1):
+        remaining, missed = subtract_removals(text, by_page.get(number, []))
+        texts.append(remaining)
+        unmatched.extend(missed)
+    return normalise(" ".join(texts)), unmatched
+
+
 def _cover(path: Path, alt: str | None, title: str) -> tuple[Resource, Cover]:
     try:
         data = path.read_bytes()
@@ -152,19 +170,23 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
     suffix = opts.input.suffix.lower()
     if not opts.input.is_file():
         raise ConversionError("input-missing", f"{opts.input} does not exist.")
-    if suffix == ".pdf":
-        raise ConversionError("input-unsupported", "PDF input is not implemented yet.")
-    if suffix != ".docx":
+    if suffix not in (".docx", ".pdf"):
         raise ConversionError(
             "input-unsupported", f"Unsupported input type {suffix!r}: use .docx or .pdf."
         )
 
     meta_file = load_meta_file(opts.meta) if opts.meta else None
-    result = docx_reader.read_docx(
-        opts.input,
-        docx_reader.DocxOptions(opts.revisions, opts.chapter_regex, opts.html_tags),  # type: ignore[arg-type]
-        diag,
-    )
+    result: docx_reader.DocxResult | pdf_reader.PdfResult
+    if suffix == ".pdf":
+        if opts.revisions != "fail":
+            diag.warn("option-ignored", "--accept-changes and --reject-changes apply to DOCX only.")
+        result = pdf_reader.read_pdf(opts.input, pdf_reader.PdfOptions(opts.chapter_regex), diag)
+    else:
+        result = docx_reader.read_docx(
+            opts.input,
+            docx_reader.DocxOptions(opts.revisions, opts.chapter_regex, opts.html_tags),  # type: ignore[arg-type]
+            diag,
+        )
     book = result.book
     outcome.book = book
     overrides: dict[str, object] = dict(meta_file.fields) if meta_file else {}
@@ -192,10 +214,18 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
 def _verify(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome, data: bytes) -> None:
     assert outcome.book is not None
     produced = epub_text(data)
-    reference = docx_reference_text(opts.input, opts.revisions)
     fold = opts.smarten
-    outcome.fidelity_main = compare(reference.main, produced.main, _removals(diag, False), fold)
-    outcome.fidelity_notes = compare(reference.notes, produced.notes, _removals(diag, True), fold)
+    if opts.input.suffix.lower() == ".pdf":
+        main, unmatched = _pdf_reference(opts.input, diag)
+        outcome.fidelity_main = compare(main, produced.main, None, fold, pdf_mode=True)
+        outcome.fidelity_main.unmatched_removals = unmatched
+        outcome.fidelity_notes = compare("", produced.notes, None, fold, pdf_mode=True)
+    else:
+        reference = docx_reference_text(opts.input, opts.revisions)
+        outcome.fidelity_main = compare(reference.main, produced.main, _removals(diag, False), fold)
+        outcome.fidelity_notes = compare(
+            reference.notes, produced.notes, _removals(diag, True), fold
+        )
     ir = ir_text(outcome.book)
     outcome.fidelity_writer = compare(
         ir.main + " " + ir.notes, produced.main + " " + produced.notes

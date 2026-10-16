@@ -4,7 +4,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
-from books import full_book, minimal_book
+from books import full_book, minimal_book, parts_book
 
 from novel2epub.diagnostics import Diagnostics
 from novel2epub.epub.writer import write_epub
@@ -16,7 +16,9 @@ pytestmark = pytest.mark.epubcheck
 
 
 @needs_epubcheck
-@pytest.mark.parametrize("make", [minimal_book, full_book], ids=["minimal", "full"])
+@pytest.mark.parametrize(
+    "make", [minimal_book, full_book, parts_book], ids=["minimal", "full", "parts"]
+)
 def test_hand_built_books_pass_epubcheck_cleanly(make, tmp_path: Path) -> None:
     out = tmp_path / "book.epub"
     write_epub(make(), out, Diagnostics())

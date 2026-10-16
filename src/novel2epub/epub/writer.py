@@ -89,6 +89,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
         landmarks.append(("cover", "Cover", f"{TEXT_DIR}/cover.xhtml"))
 
     chapter_no = 0
+    part_no = 0
     other_no = 0
     nav_spine_index: int | None = None
     for matter, section, name in sections:
@@ -97,6 +98,9 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
         if section.kind is SectionKind.CHAPTER:
             chapter_no += 1
             number = chapter_no
+        elif section.kind is SectionKind.PART:
+            part_no += 1
+            number = part_no
         else:
             other_no += 1
             number = other_no
@@ -104,7 +108,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
         data = xhtml.render_section(section, number, matter, ctx, CSS_HREF_FROM_TEXT, note_blocks)
         _add(files, manifest, spine, name, data)
         label = xhtml.section_label(section, number)
-        toc.append(package.TocEntry(label, f"{TEXT_DIR}/{name}"))
+        toc.append(package.TocEntry(label, f"{TEXT_DIR}/{name}", section.depth))
         if matter == "bodymatter" and not any(t == "bodymatter" for t, _, _ in landmarks):
             landmarks.append(("bodymatter", "Start of Content", f"{TEXT_DIR}/{name}"))
         if section.kind is SectionKind.TITLEPAGE:
@@ -118,7 +122,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
         landmarks.append(("endnotes", "Notes", f"{TEXT_DIR}/endnotes.xhtml"))
 
     landmarks.append(("toc", "Contents", f"{TEXT_DIR}/nav.xhtml#toc"))
-    nav_toc = [package.TocEntry(t.label, t.href.removeprefix(f"{TEXT_DIR}/")) for t in toc]
+    nav_toc = [package.TocEntry(t.label, t.href.removeprefix(f"{TEXT_DIR}/"), t.depth) for t in toc]
     nav_landmarks = [(t, lbl, h.removeprefix(f"{TEXT_DIR}/")) for t, lbl, h in landmarks]
     files[f"{TEXT_DIR}/nav.xhtml"] = package.nav_xhtml(
         meta.title, meta.language, CSS_HREF_FROM_TEXT, nav_toc, nav_landmarks

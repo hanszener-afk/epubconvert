@@ -1,8 +1,8 @@
 # novel2epub
 
-Converts DOCX novel manuscripts into EPUB 3, and checks that no text was lost on the way. PDF input is in progress.
+Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was lost on the way.
 
-**Status: milestone 2 of 5.** DOCX conversion works end to end, with a text-fidelity check and EPUBCheck validation on every run. PDF input (milestones 3 and 4) is not available yet.
+**Status: milestone 3 of 5.** DOCX conversion works end to end. PDF conversion works for cleanly typeset, single-column, text-based PDFs; running headers, page numbers, and footnotes in PDFs are handled in milestone 4, which is not done yet. Every run includes a text-fidelity check and EPUBCheck validation.
 
 ## What it does
 
@@ -83,6 +83,18 @@ Command-line flags override the file, which overrides the document's own propert
 - **Removed, and listed in the report:** comments, hidden text, Word's generated contents and page-number fields, empty paragraphs, and typed scene-break markers (replaced by the standard break).
 - **Text is never "fixed".** Curly or straight quotes, dashes, ellipses, and spelling stay exactly as typed. Runs of spaces collapse to one, as they would on any web page.
 
+## How PDFs are read
+
+A PDF records where each character is drawn, not which characters form a paragraph, a heading, or a footnote. Everything below is reconstruction, and is reported as such.
+
+- **Text** comes from pdfminer.six, with font names and sizes. Italic and bold are inferred from font names (for example `Caladea-Italic`), so a font with an unhelpful name loses them. Ligatures (fi, fl, ffi) become plain letters.
+- **Paragraphs** are rebuilt from first-line indents, short last lines in justified text, and vertical gaps, measured against the body text's own metrics. A paragraph that runs over a page break is joined back together.
+- **End-of-line hyphens** are resolved from the document's own usage first, then a bundled English word list (SCOWL), then prefix rules. Every choice is logged, and uncertain ones are flagged for review.
+- **Chapters and parts** come from the PDF outline (bookmarks) when it has one; otherwise from "Chapter N" style lines and from large type at the top of a page. The report says which method was used.
+- **Scene breaks:** typed markers such as `* * *`, small ornament images, and extra vertical gaps in mid-page. A gap at the foot of a page is never treated as a break.
+- **Scanned PDFs** (images of pages with no text) are rejected. OCR is not available.
+- **The fidelity check** compares against text extracted by a second, independent engine (PDFium). Hyphenation and dash spacing are compared neutrally, because those are layout decisions rather than lost text.
+
 ## Limitations
 
 These are known and deliberate for v1:
@@ -91,6 +103,9 @@ These are known and deliberate for v1:
 - Text boxes are kept, but placed after the paragraph they are anchored to.
 - Charts and drawing shapes without text are skipped, with a warning.
 - EMF and WMF images can only be converted to PNG on Windows. Elsewhere they stop the conversion with a clear message.
+- PDF: running headers, footers, and page numbers are not removed yet (milestone 4), so such PDFs currently fail the fidelity check rather than producing a book with headers in the text.
+- PDF: footnotes, multi-column layouts, and tables are not handled yet (milestone 4).
+- PDF: PDFs rarely record their language; set `--language` if the book is not in English.
 - Only English is supported. Other languages convert, but chapter and front-matter detection expect English words.
 - No conversion is perfect. The report lists every decision the converter was unsure of; read the "Needs human review" section before publishing.
 
