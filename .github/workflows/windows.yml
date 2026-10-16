@@ -1,6 +1,8 @@
 # Builds the portable Windows program and runs the test suite on Windows.
 # The zip is attached to each run as an artifact (Actions tab, the run, then
-# "Artifacts" at the bottom).
+# "Artifacts" at the bottom). Pushing a version tag (v0.5.0) also publishes
+# a GitHub Release with the zip, which gives a download link that does not
+# expire and needs no GitHub account.
 name: Windows build
 
 on:
@@ -42,8 +44,29 @@ jobs:
           JAVA_VENDOR: Eclipse Temurin (https://adoptium.net)
         run: python scripts/build_exe.py
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: novel2epub-windows
           path: dist/novel2epub-*-windows.zip
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: novel2epub-windows
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" novel2epub-*-windows.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "novel2epub $TAG" \
+            --notes "Windows: download the zip, unzip it anywhere, and see README.txt inside. Nothing to install; Java is included."

@@ -343,6 +343,11 @@ class Docx:
             '<Default Extension="bmp" ContentType="image/bmp"/>'
             '<Default Extension="tiff" ContentType="image/tiff"/>'
         )
+        # Windows metafiles only when used, so that other fixtures stay byte-identical.
+        used = {name.rsplit(".", 1)[-1] for name, _ in self.media.values()}
+        for ext, kind in (("emf", "image/x-emf"), ("wmf", "image/x-wmf")):
+            if ext in used:
+                defaults += f'<Default Extension="{ext}" ContentType="{kind}"/>'
         files["[Content_Types].xml"] = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
             '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
