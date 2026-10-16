@@ -1,8 +1,11 @@
 """Run EPUBCheck (Java) on a written EPUB and parse its JSON report.
 
 Lookup order for the jar: an explicit path, the NOVEL2EPUB_EPUBCHECK
-environment variable, then the jar bundled in the `epubcheck` Python package
-(a development dependency). Java comes from JAVA_HOME, then PATH.
+environment variable, the jar shipped inside the Windows build, then the jar
+bundled in the `epubcheck` Python package (a development dependency). Java
+comes from the runtime shipped inside the Windows build, then JAVA_HOME, then
+PATH. The Windows build prefers what it ships, so its results do not depend on
+whatever Java the computer happens to have.
 EPUBCheck makes no network requests.
 """
 
@@ -56,10 +59,23 @@ class EpubCheckResult:
         return [m for m in self.messages if m.severity == "WARNING"]
 
 
+JAVA = "java.exe" if sys.platform == "win32" else "java"
+
+
+def _app_dir() -> Path | None:
+    """Where a frozen (PyInstaller) build keeps its bundled files."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS)
+    return None
+
+
 def _find_java() -> Path | None:
-    home = os.environ.get("JAVA_HOME")
-    if home:
-        exe = Path(home) / "bin" / ("java.exe" if sys.platform == "win32" else "java")
+    app = _app_dir()
+    homes = [app / "runtime"] if app else []
+    if os.environ.get("JAVA_HOME"):
+        homes.append(Path(os.environ["JAVA_HOME"]))
+    for home in homes:
+        exe = home / "bin" / JAVA
         if exe.is_file():
             return exe
     found = shutil.which("java")
@@ -67,6 +83,9 @@ def _find_java() -> Path | None:
 
 
 def _bundled_jar() -> Path | None:
+    app = _app_dir()
+    if app and (app / "epubcheck" / "epubcheck.jar").is_file():
+        return app / "epubcheck" / "epubcheck.jar"
     spec = importlib.util.find_spec("epubcheck")  # located, not imported
     if spec is None or not spec.submodule_search_locations:
         return None

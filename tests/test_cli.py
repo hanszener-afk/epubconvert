@@ -62,3 +62,45 @@ def test_bad_meta_key_rejected(tmp_path: Path) -> None:
     meta = tmp_path / "meta.toml"
     meta.write_text('titel = "Typo"\n', encoding="utf-8")
     assert main([str(src), "--meta", str(meta), "--no-epubcheck"]) == 3
+
+
+def test_output_may_be_a_directory(tmp_path: Path) -> None:
+    src = fx.styled().save(tmp_path / "book.docx")
+    out = tmp_path / "out"
+    out.mkdir()
+    assert main([str(src), "-o", str(out), "--no-epubcheck"]) in (0, 1)
+    assert (out / "book.epub").is_file()
+    assert (out / "report.json").is_file()
+
+
+def test_internal_error_has_its_own_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    src = fx.styled().save(tmp_path / "book.docx")
+
+    def boom(_opts: object) -> None:
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr("novel2epub.cli.convert", boom)
+    assert main([str(src), "--no-epubcheck"]) == 5
+    err = capsys.readouterr().err
+    assert "internal error" in err and "RuntimeError: unexpected" in err
+
+
+def test_failure_is_not_printed_twice(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    bad = tmp_path / "bad.docx"
+    bad.write_bytes(b"not a zip")
+    assert main([str(bad), "--no-epubcheck"]) == 3
+    err = capsys.readouterr().err
+    assert err.count("is not a DOCX file") == 1
+
+
+def test_unencodable_console_does_not_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import io
+
+    src = fx.styled().save(tmp_path / "böök ≈.docx")  # name echoed in messages
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+    monkeypatch.setattr("sys.stderr", stream)
+    assert main([str(src), "--no-epubcheck"]) in (0, 1)

@@ -48,3 +48,28 @@ def test_broken_epub_is_reported(tmp_path: Path) -> None:
 
 def test_missing_tool_is_reported_not_crashed(tmp_path: Path) -> None:
     assert find_epubcheck(explicit=tmp_path / "nonexistent.jar") is None
+
+
+def test_frozen_app_prefers_its_bundled_runtime_and_jar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from novel2epub.verify import epubcheck
+
+    bundle = tmp_path / "_internal"
+    java = bundle / "runtime" / "bin" / ("java.exe" if sys.platform == "win32" else "java")
+    jar = bundle / "epubcheck" / "epubcheck.jar"
+    for f in (java, jar):
+        f.parent.mkdir(parents=True)
+        f.write_bytes(b"")
+    other = tmp_path / "jdk"
+    (other / "bin").mkdir(parents=True)
+    (other / "bin" / java.name).write_bytes(b"")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(bundle), raising=False)
+    monkeypatch.setenv("JAVA_HOME", str(other))
+    monkeypatch.delenv(epubcheck.ENV_VAR, raising=False)
+    tool = epubcheck.find_epubcheck()
+    assert tool is not None
+    assert tool.java == java and tool.jar == jar

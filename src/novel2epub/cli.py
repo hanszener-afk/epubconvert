@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
+import traceback
 from pathlib import Path
 
 from novel2epub import __version__
@@ -16,10 +18,16 @@ def _parser() -> argparse.ArgumentParser:
         description="Convert a DOCX or PDF novel manuscript into an EPUB 3 file, "
         "and check that no text was lost.",
         epilog="Exit codes: 0 success, 1 success with warnings, 2 usage error, "
-        "3 input rejected, 4 verification failed (fidelity or EPUBCheck).",
+        "3 input rejected, 4 verification failed (fidelity or EPUBCheck), "
+        "5 internal error.",
     )
     p.add_argument("input", type=Path, help="the manuscript (.docx or .pdf)")
-    p.add_argument("-o", "--output", type=Path, help="the EPUB to write (default: input name)")
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="the EPUB to write, or a folder to write it in (default: next to the input)",
+    )
     p.add_argument("--meta", type=Path, help="metadata file (TOML)")
     p.add_argument("--cover", type=Path, help="cover image (JPEG or PNG)")
     changes = p.add_mutually_exclusive_group()
@@ -56,6 +64,14 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _tolerant_streams()
+    try:
+        return _main(argv)
+    finally:
+        _pause_if_own_console()
+
+
+def _main(argv: list[str] | None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     if args.ocr:
@@ -74,6 +90,8 @@ def main(argv: list[str] | None = None) -> int:
     if not 0 <= args.threshold <= 100:
         parser.exit(ExitCode.USAGE, "novel2epub: error: --threshold must be between 0 and 100\n")
     output = args.output or args.input.with_suffix(".epub")
+    if output.is_dir():
+        output = output / f"{args.input.stem}.epub"
     if output.resolve() == args.input.resolve():
         parser.exit(ExitCode.USAGE, "novel2epub: error: the output would overwrite the input\n")
     revisions = "accept" if args.accept_changes else "reject" if args.reject_changes else "fail"
@@ -95,9 +113,43 @@ def main(argv: list[str] | None = None) -> int:
         authors=args.authors,
         language=args.language,
     )
-    outcome = convert(opts)
+    try:
+        outcome = convert(opts)
+    except Exception:
+        print(
+            "novel2epub: internal error. This is a bug in novel2epub, not a problem with "
+            "your manuscript. Nothing was written. Please report it with the details below.",
+            file=sys.stderr,
+        )
+        traceback.print_exc()
+        return int(ExitCode.INTERNAL_ERROR)
     _print_summary(outcome)
     return int(outcome.exit_code)
+
+
+def _tolerant_streams() -> None:
+    """Never crash on a character the console cannot show (Windows code pages)."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(errors="replace")
+
+
+def _pause_if_own_console() -> None:
+    """Keep the window open when started by dropping a file on the .exe.
+
+    Windows gives a program started from Explorer a console of its own, which
+    closes, with the summary, as soon as the program ends. A program started
+    from a terminal shares the terminal's console and must not pause.
+    """
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    import ctypes
+
+    processes = (ctypes.c_uint * 2)()
+    if ctypes.windll.kernel32.GetConsoleProcessList(processes, 2) == 1:  # type: ignore[attr-defined]
+        with contextlib.suppress(EOFError):
+            input("\nPress Enter to close this window.")
 
 
 def _print_summary(outcome: object) -> None:
@@ -107,7 +159,7 @@ def _print_summary(outcome: object) -> None:
     out = sys.stderr
     diag = outcome.diagnostics
     for issue in diag.issues:
-        if issue.severity.value == "info":
+        if issue.severity.value == "info" or issue.message in outcome.failures:
             continue
         where = f" ({issue.source})" if issue.source else ""
         print(f"{issue.severity.value}: {issue.message}{where}", file=out)

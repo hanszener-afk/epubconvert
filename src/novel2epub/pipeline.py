@@ -35,6 +35,7 @@ class ExitCode(IntEnum):
     USAGE = 2
     INPUT_REJECTED = 3
     VERIFICATION_FAILED = 4
+    INTERNAL_ERROR = 5  # a bug in novel2epub, not a problem with the input
 
 
 @dataclass
