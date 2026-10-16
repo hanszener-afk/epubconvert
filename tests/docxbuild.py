@@ -355,6 +355,7 @@ class Docx:
             for name in sorted(files):
                 info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
                 info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 3  # as on Unix, so that Windows builds the same bytes
                 data = files[name]
                 z.writestr(info, data.encode() if isinstance(data, str) else data)
         return buf.getvalue()

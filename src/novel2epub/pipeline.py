@@ -69,6 +69,7 @@ class Outcome:
     fidelity_writer: FidelityResult | None = None
     epubcheck: EpubCheckResult | None = None
     written: Path | None = None
+    report_md: Path | None = None
     failures: list[str] = field(default_factory=list)
 
     def summary(self) -> str:
@@ -146,7 +147,7 @@ def convert(opts: ConvertOptions) -> Outcome:
         diag.error(exc.code, str(exc))
         outcome.exit_code = ExitCode.INPUT_REJECTED
         outcome.failures.append(str(exc))
-        write_reports(outcome, report_dir)
+        outcome.report_md = write_reports(outcome, report_dir)
         return outcome
 
     _verify(opts, diag, outcome, data)
@@ -163,7 +164,7 @@ def convert(opts: ConvertOptions) -> Outcome:
         target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     outcome.written = target
-    write_reports(outcome, report_dir)
+    outcome.report_md = write_reports(outcome, report_dir)
     return outcome
 
 

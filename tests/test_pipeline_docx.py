@@ -80,7 +80,7 @@ def test_fidelity_failure_writes_failed_epub(
     assert (report_dir / "out.failed.epub").is_file()
     missing = " ".join(h.text for h in outcome.fidelity_main.unexplained_missing)
     assert "entirely the wrong boat" in missing
-    assert (report_dir / "report.json").is_file()
+    assert (report_dir / "out.report.json").is_file()
 
 
 def test_smarten_option(tmp_path: Path) -> None:

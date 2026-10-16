@@ -41,7 +41,11 @@ def _parser() -> argparse.ArgumentParser:
         "--chapter-regex", metavar="PATTERN", help="regular expression for chapter headings"
     )
     p.add_argument("--strict", action="store_true", help="treat warnings as errors")
-    p.add_argument("--report-dir", type=Path, help="where to write report.json and report.md")
+    p.add_argument(
+        "--report-dir",
+        type=Path,
+        help="where to write NAME.report.json and NAME.report.md (default: next to the EPUB)",
+    )
     p.add_argument("--title", help="book title (overrides the document and metadata file)")
     p.add_argument("--author", action="append", dest="authors", help="author (repeat for several)")
     p.add_argument("--language", help="BCP 47 language tag, for example en-GB")
@@ -179,7 +183,7 @@ def _print_summary(outcome: object) -> None:
         )
     review = len(diag.needs_review())
     if review:
-        print(f"{review} decision(s) need human review: see report.md", file=out)
+        print(f"{review} decision(s) need human review: see {outcome.report_md}", file=out)
     if outcome.written:
         print(f"wrote {outcome.written}", file=out)
 

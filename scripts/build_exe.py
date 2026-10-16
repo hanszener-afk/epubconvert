@@ -102,14 +102,14 @@ this folder. It makes no network connections.
 
 The quick way
     Drag a .docx or .pdf file onto novel2epub.exe. A window opens, shows a
-    summary, and waits for Enter. The EPUB and the reports (report.md,
-    report.json) are written next to the manuscript.
+    summary, and waits for Enter. The EPUB and its reports (NAME.report.md
+    and NAME.report.json) are written next to the manuscript.
 
 From a terminal (Command Prompt or PowerShell), for all the options
     novel2epub.exe manuscript.docx -o book.epub --meta book.toml --cover cover.jpg
     novel2epub.exe --help
 
-Read report.md after every conversion, especially the "Needs human review"
+Read NAME.report.md after every conversion, especially the "Needs human review"
 section. No conversion is perfect, and PDF conversion is reconstruction.
 
 Exit codes: 0 success, 1 success with warnings, 2 usage error, 3 input
@@ -261,7 +261,7 @@ def smoke_test(folder: Path) -> None:
             print(proc.stderr)
             if proc.returncode not in (0, 1):
                 sys.exit(f"Smoke test failed on {src.name}: exit code {proc.returncode}.")
-            report = json.loads((out / "report.json").read_text(encoding="utf-8"))
+            report = json.loads((out / f"{src.stem}.report.json").read_text(encoding="utf-8"))
             ec = report["epubcheck"]
             if not ec or not ec["ran"] or ec["errors"] or ec["warnings"]:
                 sys.exit(f"Smoke test failed on {src.name}: EPUBCheck result {ec}.")

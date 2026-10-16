@@ -14,9 +14,9 @@ def test_converts_with_warnings_exit_code(tmp_path: Path) -> None:
     code = main([str(src), "--no-epubcheck"])
     assert code == 1  # warnings: derived identifier, EPUBCheck skipped
     assert (tmp_path / "book.epub").is_file()
-    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    report = json.loads((tmp_path / "book.report.json").read_text(encoding="utf-8"))
     assert report["status"] == "warnings"
-    assert (tmp_path / "report.md").is_file()
+    assert (tmp_path / "book.report.md").is_file()
 
 
 def test_clean_run_exits_zero(tmp_path: Path) -> None:
@@ -29,7 +29,7 @@ def test_clean_run_exits_zero(tmp_path: Path) -> None:
     )
     code = main([str(src), "--meta", str(meta), "-o", str(tmp_path / "out" / "b.epub")])
     if code == 1:
-        report = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+        report = json.loads((tmp_path / "out" / "b.report.json").read_text(encoding="utf-8"))
         codes = {i["code"] for i in report["issues"] if i["severity"] == "warning"}
         assert codes <= {"epubcheck-missing"}, codes
     else:
@@ -70,7 +70,7 @@ def test_output_may_be_a_directory(tmp_path: Path) -> None:
     out.mkdir()
     assert main([str(src), "-o", str(out), "--no-epubcheck"]) in (0, 1)
     assert (out / "book.epub").is_file()
-    assert (out / "report.json").is_file()
+    assert (out / "book.report.json").is_file()
 
 
 def test_internal_error_has_its_own_exit_code(

@@ -1,7 +1,9 @@
 """report.json and report.md. Deterministic: no timestamps or absolute paths.
 
-report.json is complete. report.md is for a person: what needs checking
-comes first, and long lists are cut short with a pointer to report.json.
+Written as NAME.report.json and NAME.report.md, NAME being the EPUB's name
+without .epub, so that several books can share a folder. The JSON report is
+complete. The Markdown report is for a person: what needs checking comes
+first, and long lists are cut short with a pointer to the JSON report.
 """
 
 from __future__ import annotations
@@ -23,8 +25,8 @@ if TYPE_CHECKING:
 
 # Decisions that say how a section was found, in order of preference.
 _SECTION_DECISIONS = ("chapter-detection", "front-matter", "back-matter")
-MD_LIMIT = 100  # items per list in report.md
-MD_REMOVED_LIMIT = 30  # distinct texts per removal kind in report.md
+MD_LIMIT = 100  # items per list in the Markdown report
+MD_REMOVED_LIMIT = 30  # distinct texts per removal kind in the Markdown report
 
 _NUMERIC = re.compile(r"^\W*(\d+|[ivxlcdm]+)\W*$", re.IGNORECASE)
 
@@ -134,6 +136,7 @@ def build_report(outcome: Outcome) -> dict[str, Any]:
     return {
         "tool": {"name": "novel2epub", "version": __version__},
         "input": outcome.options.input.name,
+        "json_report": report_names(outcome.options.output)[0],
         "output": outcome.written.name if outcome.written else None,
         "status": outcome.exit_code.name.lower(),
         "exit_code": int(outcome.exit_code),
@@ -194,10 +197,19 @@ def build_report(outcome: Outcome) -> dict[str, Any]:
     }
 
 
-def _more(total: int, shown: int, what: str) -> list[str]:
+def report_names(output: Path) -> tuple[str, str]:
+    """The JSON and Markdown report file names for the EPUB `output`."""
+    return f"{output.stem}.report.json", f"{output.stem}.report.md"
+
+
+def _json_name(report: dict[str, Any]) -> str:
+    return str(report.get("json_report", "the JSON report"))
+
+
+def _more(total: int, shown: int, what: str, json_name: str) -> list[str]:
     if total <= shown:
         return []
-    return [f"- ...and {total - shown} more {what}: see report.json."]
+    return [f"- ...and {total - shown} more {what}: see {json_name}."]
 
 
 def _head(report: dict[str, Any]) -> list[str]:
@@ -243,7 +255,7 @@ def _review(report: dict[str, Any]) -> list[str]:
         where = f" ({item['source']})" if item.get("source") else ""
         conf = f" [confidence {item['confidence']:.2f}]" if "confidence" in item else ""
         lines.append(f"- {item['kind']}: {item['description']}{conf}{where}")
-    lines += _more(len(items), MD_LIMIT, "items")
+    lines += _more(len(items), MD_LIMIT, "items", _json_name(report))
     return [*lines, ""]
 
 
@@ -275,7 +287,7 @@ def _fidelity_md(report: dict[str, Any]) -> list[str]:
         found += [("Added", h) for h in f.get("added", [])]
         for what, h in found[:MD_LIMIT]:
             details.append(f'- {what} ({name}): "{h["text"]}" after "{h["before"]}"')
-        details += _more(len(found), MD_LIMIT, "differences")
+        details += _more(len(found), MD_LIMIT, "differences", _json_name(report))
         unmatched = f.get("unmatched_removals", [])
         if unmatched:
             details.append(
@@ -348,7 +360,7 @@ def _removed_md(report: dict[str, Any]) -> list[str]:
             times = f" ({n} times)" if n > 1 else ""
             where = first[(kind, text)]
             lines.append(f'- "{shown}"{times}' + (f", first at {where}" if where else ""))
-        lines += _more(len(distinct), MD_REMOVED_LIMIT, "distinct texts")
+        lines += _more(len(distinct), MD_REMOVED_LIMIT, "distinct texts", _json_name(report))
         lines.append("")
     return lines
 
@@ -365,7 +377,7 @@ def _epubcheck_md(report: dict[str, Any]) -> list[str]:
             f"EPUBCheck {ec['version']}: {ec['errors']} error(s), {ec['warnings']} warning(s)."
         )
         lines += [f"- {m}" for m in ec["messages"][:MD_LIMIT]]
-        lines += _more(len(ec["messages"]), MD_LIMIT, "messages")
+        lines += _more(len(ec["messages"]), MD_LIMIT, "messages", _json_name(report))
     return [*lines, ""]
 
 
@@ -380,10 +392,13 @@ def render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def write_reports(outcome: Outcome, directory: Path) -> None:
+def write_reports(outcome: Outcome, directory: Path) -> Path:
+    """Write both reports; return the Markdown report's path."""
     directory.mkdir(parents=True, exist_ok=True)
     report = build_report(outcome)
-    (directory / "report.json").write_text(
+    json_name, md_name = report_names(outcome.options.output)
+    (directory / json_name).write_text(
         json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
-    (directory / "report.md").write_text(render_markdown(report), encoding="utf-8")
+    (directory / md_name).write_text(render_markdown(report), encoding="utf-8")
+    return directory / md_name

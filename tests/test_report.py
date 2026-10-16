@@ -1,4 +1,4 @@
-"""Milestone 5: the conversion report (report.json and report.md)."""
+"""Milestone 5: the conversion report (NAME.report.json and NAME.report.md)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ def _run(tmp_path: Path, name: str = "styled") -> dict:
     tmp_path.mkdir(parents=True, exist_ok=True)
     src = getattr(fx, name)().save(tmp_path / f"{name}.docx")
     convert(ConvertOptions(input=src, output=tmp_path / "out" / "book.epub", epubcheck=False))
-    return json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    return json.loads((tmp_path / "out" / "book.report.json").read_text(encoding="utf-8"))
 
 
 def test_structure_carries_detection_method_and_confidence(tmp_path: Path) -> None:
@@ -46,7 +46,7 @@ def test_decisions_are_summarised_by_kind(tmp_path: Path) -> None:
 
 def test_markdown_puts_review_first_and_lists_removed_text(tmp_path: Path) -> None:
     report = _run(tmp_path, "front_back")
-    md = (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
+    md = (tmp_path / "out" / "book.report.md").read_text(encoding="utf-8")
     assert md.index("## Needs human review") < md.index("## Text fidelity")
     assert md.index("## Text fidelity") < md.index("## Structure")
     removed_texts = {r["text"] for r in report["removed"]["items"]}
@@ -57,7 +57,7 @@ def test_markdown_puts_review_first_and_lists_removed_text(tmp_path: Path) -> No
 
 def test_markdown_states_the_result_in_words(tmp_path: Path) -> None:
     _run(tmp_path)
-    md = (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
+    md = (tmp_path / "out" / "book.report.md").read_text(encoding="utf-8")
     assert "**Result:** Converted, with warnings" in md
 
 
@@ -81,7 +81,7 @@ def test_long_lists_are_capped_in_markdown_but_complete_in_json(tmp_path: Path) 
     report["summary"]["needs_review"] = 500
     md = render_markdown(report)
     assert "item 0" in md and "item 499" not in md
-    assert "report.json" in md
+    assert "book.report.json" in md
 
 
 def test_build_report_without_book() -> None:
@@ -111,3 +111,15 @@ def test_removed_page_numbers_are_summarised_as_a_range() -> None:
     md = "\n".join(_removed_md(report))
     assert "3 numbers, from 7 to 9." in md
     assert '"8"' not in md
+
+
+def test_two_books_in_one_folder_keep_their_own_reports(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    for name in ("styled", "front_back"):
+        src = getattr(fx, name)().save(tmp_path / f"{name}.docx")
+        convert(ConvertOptions(input=src, output=out / f"{name}.epub", epubcheck=False))
+    for name in ("styled", "front_back"):
+        report = json.loads((out / f"{name}.report.json").read_text(encoding="utf-8"))
+        assert report["input"] == f"{name}.docx"
+        assert (out / f"{name}.report.md").is_file()
+    assert not (out / "report.json").exists()

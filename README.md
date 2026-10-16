@@ -25,13 +25,13 @@ For every conversion it:
 2. writes an EPUB 3 file (one file per chapter, contents page, navigation, accessibility metadata);
 3. extracts the text from the EPUB and compares it, word for word, with text read independently from the manuscript. Anything deliberately removed (such as comments, a typed contents list, or page-number fields) is logged, and only unlogged differences count as loss;
 4. validates the EPUB with EPUBCheck;
-5. writes `report.json` and `report.md` describing the structure it found, everything it removed, every heuristic decision with its confidence, and what needs a human to check.
+5. writes `NAME.report.md` and `NAME.report.json` (NAME being the EPUB's name) describing the structure it found, everything it removed, every heuristic decision with its confidence, and what needs a human to check.
 
 If more than 0.1% of the text is missing, or EPUBCheck reports an error, the EPUB is written as `NAME.failed.epub` in the report directory, never at the requested output path.
 
 ### Reading the report
 
-`report.md` is written for a person, in this order:
+`NAME.report.md` is written for a person, in this order:
 
 1. **Result, book, and a one-line summary:** chapters, words, items removed, warnings.
 2. **Needs human review:** every warning, then every decision the converter made with confidence below 0.75 (an uncertain hyphen, a chapter heading found only by its size), each with its location: a paragraph number for DOCX, a page and position for PDF. Read this before publishing.
@@ -41,9 +41,7 @@ If more than 0.1% of the text is missing, or EPUBCheck reports an error, the EPU
 6. **Removed:** what was taken out and why, with the text itself (page numbers are summarised as a range). An unusual count is worth a look: a novel with no running headers removed, or hundreds of "comments".
 7. **EPUBCheck:** the validator's verdict and any messages.
 
-`report.json` holds the same information in full, with no lists cut short, for scripts.
-
-Both files are named `report.md` and `report.json`, so converting two books into the same folder overwrites the first book's reports. Give each book its own `--report-dir` (or output folder) if you want to keep both.
+`NAME.report.json` holds the same information in full, with no lists cut short, for scripts. Both are named after the EPUB, so several books can share a folder.
 
 ### Exit codes
 
