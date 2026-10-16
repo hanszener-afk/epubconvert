@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 LIGATURES = {
@@ -42,6 +43,8 @@ _QUOTE_FOLD = str.maketrans(
 
 _INNER_HYPHEN = re.compile(r"(?<=\w)[-\u2010] ?(?=\w)")
 _DASH = re.compile(r" ?([\u2014\u2013]) ?")
+_QUOTE_SPACE_OPEN = re.compile(r"([\u201c\u2018]) ")
+_QUOTE_SPACE_CLOSE = re.compile(r" ([\u201d\u2019])")
 
 
 def tokens(text: str, fold_quotes: bool = False, pdf_mode: bool = False) -> list[str]:
@@ -53,21 +56,30 @@ def tokens(text: str, fold_quotes: bool = False, pdf_mode: bool = False) -> list
         text = text.translate(_QUOTE_FOLD)
     if pdf_mode:
         text = _DASH.sub(r" \1 ", _INNER_HYPHEN.sub("", text)).strip()
+        # PDF text extraction sometimes detaches a quotation mark from its word.
+        text = _QUOTE_SPACE_OPEN.sub(r"\1", _QUOTE_SPACE_CLOSE.sub(r"\1", text))
     return text.split() if text else []
 
 
-def subtract_removals(text: str, removals: list[tuple[str, str]]) -> tuple[str, list[str]]:
-    """Cut logged removals (text, context) out of the reference, in document order.
+Removal = tuple[str, str] | tuple[str, str, str]  # (text, context[, replacement])
 
-    Each removal is searched for from the position of the previous one. An
-    occurrence whose preceding text matches the removal's recorded context
-    is preferred, so that a removed page number "4" is not cut from "1840".
-    Returns the remaining text and the removals that could not be found.
+
+def subtract_removals(text: str, removals: Sequence[Removal]) -> tuple[str, list[str]]:
+    """Cut logged removals out of the reference, in document order.
+
+    Each removal is (text, context) or (text, context, replacement); a
+    replacement covers deliberate rewrites such as joining a drop cap to its
+    word. Each is searched for from the position of the previous one, preferring
+    an occurrence whose preceding text matches the recorded context, then a
+    whole-token occurrence, so that a removed page number "4" is not cut from
+    "1840". Returns the remaining text and the removals that could not be found.
     """
     text = normalise(text)
     cursor = 0
     unmatched: list[str] = []
-    for raw, context in removals:
+    for item in removals:
+        raw, context = item[0], item[1]
+        replacement = normalise(item[2]) if len(item) > 2 else ""  # type: ignore[misc]
         target = normalise(raw)
         if not target:
             continue
@@ -77,22 +89,34 @@ def subtract_removals(text: str, removals: list[tuple[str, str]]) -> tuple[str, 
         if idx < 0:
             unmatched.append(raw)
             continue
-        text = text[:idx] + text[idx + len(target) :]
+        text = text[:idx] + replacement + text[idx + len(target) :]
         cursor = idx
     return normalise(text), unmatched
 
 
-def _locate(text: str, target: str, context: str, start: int) -> int:
-    first = text.find(target, start)
-    if first < 0 or not context:
-        return first
-    tail = context[-12:].rstrip()
-    idx = first
+def _occurrences(text: str, target: str, start: int) -> list[int]:
+    found = []
+    idx = text.find(target, start)
     while idx >= 0:
-        if text[:idx].rstrip().endswith(tail):
-            return idx
+        found.append(idx)
         idx = text.find(target, idx + 1)
-    return first
+    return found
+
+
+def _locate(text: str, target: str, context: str, start: int) -> int:
+    found = _occurrences(text, target, start)
+    if not found:
+        return -1
+    if context:
+        tail = context[-12:].rstrip()
+        for idx in found:
+            if text[:idx].rstrip().endswith(tail):
+                return idx
+    for idx in found:
+        end = idx + len(target)
+        if (idx == 0 or text[idx - 1] == " ") and (end == len(text) or text[end] == " "):
+            return idx
+    return found[0]
 
 
 @dataclass(slots=True)
@@ -148,7 +172,7 @@ CONTEXT = 6
 def compare(
     reference: str,
     output: str,
-    removals: list[tuple[str, str]] | None = None,
+    removals: Sequence[Removal] | None = None,
     fold_quotes: bool = False,
     pdf_mode: bool = False,
 ) -> FidelityResult:

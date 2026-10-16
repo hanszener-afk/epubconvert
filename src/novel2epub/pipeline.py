@@ -104,11 +104,11 @@ def _removals(diag: Diagnostics, notes: bool) -> list[tuple[str, str]]:
 
 def _pdf_reference(path: Path, diag: Diagnostics) -> tuple[str, list[str]]:
     """The PDF reference text, with each page's logged removals cut from that page."""
-    by_page: dict[int, list[tuple[str, str]]] = {}
+    by_page: dict[int, list[tuple[str, str, str]]] = {}
     for rm in diag.removals:
         if rm.kind in NOT_IN_REFERENCE or not rm.text or not isinstance(rm.source, PdfRef):
             continue
-        by_page.setdefault(rm.source.page, []).append((rm.text, rm.context))
+        by_page.setdefault(rm.source.page, []).append((rm.text, rm.context, rm.replacement))
     texts: list[str] = []
     unmatched: list[str] = []
     for number, text in enumerate(pdf_reference_pages(path), start=1):
@@ -219,7 +219,10 @@ def _verify(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome, data: byt
         main, unmatched = _pdf_reference(opts.input, diag)
         outcome.fidelity_main = compare(main, produced.main, None, fold, pdf_mode=True)
         outcome.fidelity_main.unmatched_removals = unmatched
-        outcome.fidelity_notes = compare("", produced.notes, None, fold, pdf_mode=True)
+        # Footnote lines were logged as removed from the main text; those logged
+        # lines, located in the PDFium text above, are the notes' reference.
+        notes_ref = " ".join(r.text for r in diag.removals if r.kind == "footnote")
+        outcome.fidelity_notes = compare(notes_ref, produced.notes, None, fold, pdf_mode=True)
     else:
         reference = docx_reference_text(opts.input, opts.revisions)
         outcome.fidelity_main = compare(reference.main, produced.main, _removals(diag, False), fold)

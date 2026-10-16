@@ -198,6 +198,10 @@ class Docx:
     creator: str = "Ann Author"
     modified: str = "2026-02-03T04:05:06Z"
     sect_pr: str = '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>'
+    # Header and footer content by type ("default", "even", "first"): paragraph XML.
+    headers: dict[str, str] = field(default_factory=dict)
+    footers: dict[str, str] = field(default_factory=dict)
+    settings: str = ""  # inner XML of w:settings, e.g. "<w:evenAndOddHeaders/>"
 
     def add(self, *paragraphs: str) -> Docx:
         self.body.extend(paragraphs)
@@ -213,10 +217,55 @@ class Docx:
         rels = [
             ("rIdStyles", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", "styles.xml", False),
         ]  # fmt: skip
+        refs = ""
+        for kind, parts in (("header", self.headers), ("footer", self.footers)):
+            tag = "hdr" if kind == "header" else "ftr"
+            for n, (typ, xml) in enumerate(sorted(parts.items()), start=1):
+                name = f"{kind}{n}.xml"
+                files[f"word/{name}"] = (
+                    f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                    f"<w:{tag} {NS}>{xml}</w:{tag}>"
+                )
+                rid = f"rId{kind}{n}"
+                rels.append(
+                    (
+                        rid,
+                        f"http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}",
+                        name,
+                        False,
+                    )
+                )
+                overrides.append(
+                    (
+                        f"/word/{name}",
+                        f"application/vnd.openxmlformats-officedocument.wordprocessingml.{kind}+xml",
+                    )
+                )
+                refs += f'<w:{kind}Reference w:type="{typ}" r:id="{rid}"/>'
+        if self.settings:
+            files["word/settings.xml"] = (
+                f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:settings {NS}>'
+                f"{self.settings}</w:settings>"
+            )
+            rels.append(
+                (
+                    "rIdSettings",
+                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings",
+                    "settings.xml",
+                    False,
+                )
+            )
+            overrides.append(
+                (
+                    "/word/settings.xml",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
+                )
+            )
+        sect_pr = self.sect_pr.replace("<w:sectPr>", "<w:sectPr>" + refs, 1)
         files["word/document.xml"] = (
             f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<w:document {NS}><w:body>'
             + "".join(self.body)
-            + self.sect_pr
+            + sect_pr
             + "</w:body></w:document>"
         )
         files["word/styles.xml"] = self.styles

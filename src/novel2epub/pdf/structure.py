@@ -44,6 +44,11 @@ from novel2epub.normalise.scenebreaks import scene_break_confidence
 from novel2epub.pdf.inspect import OutlineEntry
 from novel2epub.pdf.layout import Metrics, PdfBlock
 
+# A contents entry: a title, a run of leader dots or wide space, and a page number.
+TOC_ENTRY = re.compile(
+    r"^(?P<title>.*?\w.*?)\s*(?:[.\u00b7\u2026_]{2,}|\s{2,}|\t)\s*(?P<page>\d{1,4}|[ivxlcdm]{1,7})$",
+    re.IGNORECASE,
+)
 PART_PATTERN = re.compile(r"^(part|book)\s+\S+", re.IGNORECASE)
 GAP_SCENE_BREAK = 2.2  # an extra gap of this many line spaces mid-page
 ORNAMENT_MAX_W = 180.0
@@ -96,6 +101,59 @@ class PdfStructurer:
         self.first_on_page = {
             i for i, b in enumerate(blocks) if i == 0 or blocks[i - 1].page != b.page
         }
+        self.toc_blocks: set[int] = set()
+        self.toc_titles: list[str] = []
+        self._find_printed_toc()
+
+    # ------------------------------------------------------- printed contents
+
+    def _find_printed_toc(self) -> None:
+        """A "Contents" heading followed only by entry lines ("Title ..... 12").
+
+        Only blocks made entirely of entry-like lines are taken, so prose can
+        never be removed as a contents list."""
+        for i, b in enumerate(self.blocks):
+            named, kind = named_kind(b.text)
+            if not (named and kind is None and self._is_heading_like(i)):
+                continue
+            titles: list[str] = []
+            j = i + 1
+            while j < len(self.blocks):
+                entries = [TOC_ENTRY.match(ln.text.strip()) for ln in self.blocks[j].lines]
+                if not entries or not all(entries):
+                    break
+                titles.extend(m.group("title").strip() for m in entries if m)
+                j += 1
+            if len(titles) >= 2:
+                self.toc_blocks = set(range(i, j))
+                self.toc_titles = titles
+                return
+
+    def _printed_toc_headings(self) -> list[_Heading]:
+        if not self.toc_titles:
+            return []
+        found: list[_Heading] = []
+        pointer = max(self.toc_blocks) + 1
+        for title in self.toc_titles:
+            target = _key(title)
+            match = next(
+                (j for j in range(pointer, len(self.blocks))
+                 if self._is_heading_like(j) and _key(self.blocks[j].text) == target),
+                None,
+            )  # fmt: skip
+            if match is None:
+                self.diag.decided(
+                    "chapter-detection",
+                    f"Contents entry {title!r} matches no heading in the text.",
+                    0.3,
+                    "printed-toc",
+                )
+                continue
+            named, kind = named_kind(title)
+            kind = (kind or SectionKind.CHAPTER) if named else SectionKind.CHAPTER
+            found.append(_Heading(match, kind, 0, "printed-toc", 0.85))
+            pointer = match + 1
+        return found if len(found) >= max(2, len(self.toc_titles) // 2) else []
 
     # ------------------------------------------------------------ headings
 
@@ -137,7 +195,8 @@ class PdfStructurer:
             elif level == 1:
                 kind = (kind_ or SectionKind.CHAPTER) if named else SectionKind.CHAPTER
                 depth = 1  # a level-1 entry always has a level-0 parent
-                kind, depth = SectionKind.CHAPTER, -1
+            else:
+                kind, depth = SectionKind.CHAPTER, -1  # a heading inside a chapter
             found.append(_Heading(indices[0], kind, depth, "outline", confidence, indices))
         found.sort(key=lambda h: h.index)
         return found
@@ -261,6 +320,10 @@ class PdfStructurer:
                 1 for e in self.outline if e.level <= min(x.level for x in self.outline) + 1
             ):
                 self.diag.warn("outline-poor", "Most outline entries match no printed heading.")
+        if not found:
+            found = self._printed_toc_headings()
+            if found:
+                self._assign_parts(found)
         if not found and self.regex is not None:
             found = self._regex_headings()
         if not found:
@@ -289,7 +352,8 @@ class PdfStructurer:
             )
         tops = [h for h in found if h.depth >= 0]
         subs = {h.index: h for h in found if h.depth < 0}
-        title_parts = {i for h in found for i in h.title_indices}
+        # Only section titles are lifted out of the text; sub-headings stay in place.
+        title_parts = {i for h in found if h.depth >= 0 for i in h.title_indices}
         if not tops:
             self.diag.warn(
                 "no-chapters",
@@ -316,7 +380,8 @@ class PdfStructurer:
             end = starts[n + 1] if n + 1 < len(tops) else len(self.blocks)
             title = self._title(h.title_indices)
             blocks = self._blocks(range(start, end), subs, title_parts)
-            if not blocks and h.kind is not SectionKind.PART:
+            has_children = n + 1 < len(tops) and tops[n + 1].depth > h.depth
+            if not blocks and h.kind is not SectionKind.PART and not has_children:
                 self.diag.warn(
                     "empty-chapter",
                     f"The section {self.blocks[h.index].text.strip()!r} has no text.",
@@ -420,6 +485,14 @@ class PdfStructurer:
             if i in skip:
                 continue
             b = self.blocks[i]
+            if i in self.toc_blocks:
+                for ln in b.lines:
+                    ref = PdfRef(
+                        ln.page,
+                        (round(ln.x0, 1), round(ln.y0, 1), round(ln.x1, 1), round(ln.y1, 1)),
+                    )
+                    self.diag.removed("manual-toc", ln.text, ref)
+                continue
             text = b.text.strip()
             if not b.quote:
                 quote = None
@@ -435,8 +508,11 @@ class PdfStructurer:
                 b.gap_before is not None
                 and b.gap_before > GAP_SCENE_BREAK
                 and not b.quote
+                and not b.centred
+                and abs(b.size - self.m.body_size) < 0.4
                 and out
                 and isinstance(out[-1], Paragraph)
+                and out[-1].align is Align.START
                 and i not in subs
             ):
                 self.diag.decided(

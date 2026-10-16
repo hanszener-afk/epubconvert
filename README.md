@@ -2,7 +2,7 @@
 
 Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was lost on the way.
 
-**Status: milestone 3 of 5.** DOCX conversion works end to end. PDF conversion works for cleanly typeset, single-column, text-based PDFs; running headers, page numbers, and footnotes in PDFs are handled in milestone 4, which is not done yet. Every run includes a text-fidelity check and EPUBCheck validation.
+**Status: milestone 4 of 5.** DOCX and PDF conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. Milestone 5 (report polish, documentation, the Windows build) remains.
 
 ## What it does
 
@@ -90,7 +90,10 @@ A PDF records where each character is drawn, not which characters form a paragra
 - **Text** comes from pdfminer.six, with font names and sizes. Italic and bold are inferred from font names (for example `Caladea-Italic`), so a font with an unhelpful name loses them. Ligatures (fi, fl, ffi) become plain letters.
 - **Paragraphs** are rebuilt from first-line indents, short last lines in justified text, and vertical gaps, measured against the body text's own metrics. A paragraph that runs over a page break is joined back together.
 - **End-of-line hyphens** are resolved from the document's own usage first, then a bundled English word list (SCOWL), then prefix rules. Every choice is logged, and uncertain ones are flagged for review.
-- **Chapters and parts** come from the PDF outline (bookmarks) when it has one; otherwise from "Chapter N" style lines and from large type at the top of a page. The report says which method was used.
+- **Running headers, footers, and page numbers** are found by what repeats at the page edges: page numbers that run in step with the pages, and lines that repeat (including alternating left and right page headers). Only short lines at the very top or bottom of a page can be removed, a scene-break marker never is, and every removal is listed in the report.
+- **Footnotes** at the foot of a page become linked pop-up notes when their marker is found raised in the text above. Footnote-like text with no matching marker stays where it is, with a warning.
+- **Drop caps** (including an opening quotation mark set as a drop cap) are rejoined to their word.
+- **Chapters and parts** come from the PDF outline (bookmarks) when it has one; then from a printed contents page; then from "Chapter N" style lines; then from large type at the top of a page. The report says which method was used.
 - **Scene breaks:** typed markers such as `* * *`, small ornament images, and extra vertical gaps in mid-page. A gap at the foot of a page is never treated as a break.
 - **Scanned PDFs** (images of pages with no text) are rejected. OCR is not available.
 - **The fidelity check** compares against text extracted by a second, independent engine (PDFium). Hyphenation and dash spacing are compared neutrally, because those are layout decisions rather than lost text.
@@ -103,8 +106,9 @@ These are known and deliberate for v1:
 - Text boxes are kept, but placed after the paragraph they are anchored to.
 - Charts and drawing shapes without text are skipped, with a warning.
 - EMF and WMF images can only be converted to PNG on Windows. Elsewhere they stop the conversion with a clear message.
-- PDF: running headers, footers, and page numbers are not removed yet (milestone 4), so such PDFs currently fail the fidelity check rather than producing a book with headers in the text.
-- PDF: footnotes, multi-column layouts, and tables are not handled yet (milestone 4).
+- PDF: multi-column pages and tables are detected and reported, not converted: their text is kept, but the reading order on those pages may be wrong.
+- PDF: italic and bold are inferred from font names. A typeface whose names do not say "Italic" or "Bold" loses them, and the fidelity check cannot notice.
+- PDF: the fidelity check cannot see furniture that was *not* removed (a header left in the text is present in the source too). The report's removal counts are the check: a long book with no running headers removed is worth a look.
 - PDF: PDFs rarely record their language; set `--language` if the book is not in English.
 - Only English is supported. Other languages convert, but chapter and front-matter detection expect English words.
 - No conversion is perfect. The report lists every decision the converter was unsure of; read the "Needs human review" section before publishing.

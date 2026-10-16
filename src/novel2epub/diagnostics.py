@@ -30,6 +30,7 @@ class Removal:
     text: str
     source: SourceRef | None = None
     context: str = ""  # source text just before the removal, to locate it precisely
+    replacement: str = ""  # for a deliberate rewrite (such as a drop cap joined to its word)
 
 
 @dataclass(slots=True)
@@ -70,9 +71,14 @@ class Diagnostics:
         self.issues.append(Issue(code, message, Severity.ERROR, source))
 
     def removed(
-        self, kind: str, text: str, source: SourceRef | None = None, context: str = ""
+        self,
+        kind: str,
+        text: str,
+        source: SourceRef | None = None,
+        context: str = "",
+        replacement: str = "",
     ) -> None:
-        self.removals.append(Removal(kind, text, source, context[-40:]))
+        self.removals.append(Removal(kind, text, source, context[-40:], replacement))
 
     def decided(
         self,

@@ -1,6 +1,6 @@
 # novel2epub: Step 0 plan (awaiting approval)
 
-Status: approved 2026-10-16. Milestones 1 to 3 implemented.
+Status: approved 2026-10-16. Milestones 1 to 4 implemented.
 
 ## 1. Language and runtime
 
@@ -177,6 +177,15 @@ As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip de
 - The fidelity comparison for PDF is neutral to hyphenation ("mi-litia" = "militia") and to dash spacing at line ends; dehyphenation choices are logged decisions instead. Removals are cut from the PDFium reference page by page.
 - PDFium reports line-break hyphens as U+0002 or U+FFFE depending on version; both are mapped back to hyphens in the reference.
 - An outline entry with children is a part, unless it is a named section (an Epilogue with sub-sections keeps its kind and nests its children).
+
+### Milestone 4 decisions
+
+- Page furniture is identified by repetition and position, never by position alone: a body's first line also sits at the same height on every page. Removal is limited to short lines in the outer 15% of the page, two per edge, and never a scene-break marker (a `* * *` that fell at the foot of several pages was removed as a "footer" until this rule; the fidelity check could not see it because the removal was logged).
+- Second instance of the milestone 2 lesson: every removal heuristic must be bounded on its own terms, because a logged removal is invisible to the fidelity check.
+- Removals can carry a replacement, for deliberate rewrites such as joining a drop cap ("ir" becomes "Sir"); locating them prefers the recorded context, then a whole-token match.
+- PDF footnotes: the lines removed from the main text are the reference for the notes, so note text is checked too. Notes are numbered afresh in the EPUB; symbol markers (*, dagger) are kept.
+- Chapter detection order for PDF: outline, printed contents, `--chapter-regex`, "Chapter N" patterns, large type. The brief put large type before patterns; patterns are more specific, so they are tried first, and each heading still records its method.
+- Text printed above a chapter heading stays where it was printed (milestone 3), and a gap before a centred line ("THE END") is not a scene break.
 
 ### v2 direction (not in v1)
 

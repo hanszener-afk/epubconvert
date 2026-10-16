@@ -105,10 +105,17 @@ def measure(pages: list[Page]) -> Metrics:
 
 
 class Layout:
-    def __init__(self, metrics: Metrics, dehyph: Dehyphenator, diag: Diagnostics) -> None:
+    def __init__(
+        self,
+        metrics: Metrics,
+        dehyph: Dehyphenator,
+        diag: Diagnostics,
+        markers: dict[tuple[int, str], str] | None = None,
+    ) -> None:
         self.m = metrics
         self.dehyph = dehyph
         self.diag = diag
+        self.markers = dict(markers or {})  # (page, marker) -> note id, consumed once
 
     # ------------------------------------------------------------ line tests
 
@@ -161,17 +168,77 @@ class Layout:
     # ----------------------------------------------------------------- joins
 
     def _segments(self, ln: Line) -> list[Segment]:
-        out = []
+        out: list[Segment] = []
+        before = ""
         for span in ln.spans:
-            fmt = frozenset(f for f, on in (("bold", span.bold), ("italic", span.italic)) if on)
+            marker = span.text.strip()
+            note = self.markers.pop((ln.page, marker), None) if span.superscript else None
+            if note is not None:
+                self.diag.removed("note-mark", marker, _ref(ln), before)
+                out.append(Segment("", frozenset(), None, "noteref", note))
+                continue
+            flags = (
+                ("bold", span.bold),
+                ("italic", span.italic),
+                ("superscript", span.superscript),
+            )
+            fmt = frozenset(f for f, on in flags if on)
             out.append(Segment(span.text, fmt))
+            before += span.text
         return out
 
+    # -------------------------------------------------------------- drop caps
+
+    def drop_caps(self, lines: list[Line]) -> list[Line]:
+        """Join a large initial letter to the word it begins, and square up the
+        lines set beside it so they are not read as indented paragraphs."""
+        body = self.m.body_size
+        caps = [ln for ln in lines if _is_cap(ln.text.strip()) and ln.size >= 2.2 * body]
+        for cap in caps:
+            beside = sorted(
+                (ln for ln in lines
+                 if ln is not cap and cap.x1 - 3 <= ln.x0 <= cap.x1 + 2 * body
+                 and cap.y0 - 1 <= ln.y1 <= cap.y1 + 3),
+                key=lambda ln: -ln.y1,
+            )  # fmt: skip
+            if not beside:
+                continue
+            first = beside[0]
+            letter = cap.text.strip()
+            word = _leading_word(first.text.lstrip())
+            joined = (letter + word).lower()
+            words = self.dehyph.wordlist
+            if not letter[-1].isalpha():
+                sep, confidence = "", 0.85  # an opening quotation mark set as the drop cap
+            elif joined.lstrip(_OPENING) in self.dehyph.counts or joined.lstrip(_OPENING) in words:
+                sep, confidence = "", 0.9
+            elif letter.lower() in ("a", "i", "o") and word.lower() in words:
+                sep, confidence = " ", 0.8
+            else:
+                sep, confidence = "", 0.6
+            lead = next(s for s in first.spans if s.text.strip())
+            lead.text = letter + sep + lead.text.lstrip()
+            for ln in beside:
+                ln.x0 = self.m.left
+            lines = [ln for ln in lines if ln is not cap]
+            # The rewrite is logged first: the reference text has the word where the
+            # paragraph starts and the separate letter somewhere after it.
+            self.diag.removed("drop-cap-join", word, _ref(first), replacement=letter + sep + word)
+            self.diag.removed("drop-cap", letter, _ref(cap))
+            self.diag.decided(
+                "drop-cap", f"Drop cap {letter!r} joined as {letter + sep + word!r}.",
+                confidence, "drop-cap", _ref(cap),
+            )  # fmt: skip
+        return lines
+
     def append_line(self, block: PdfBlock, ln: Line) -> None:
-        new = self._segments(ln)
+        self.join_segments(block, self._segments(ln), ln)
+        block.lines.append(ln)
+
+    def join_segments(self, block: PdfBlock, new: list[Segment], ln: Line) -> None:
+        """Append segments that start a new visual line, joining at the line break."""
         if not block.segments:
             block.segments = new
-            block.lines.append(ln)
             return
         last = next((s for s in reversed(block.segments) if s.text), None)
         first = next((s for s in new if s.text.strip()), None)
@@ -201,17 +268,18 @@ class Layout:
                 pass  # an unspaced dash: the words run on
             elif start in "\u2014" and end.isalnum():
                 pass
+            elif block.segments[-1].kind != "text":
+                block.segments.append(Segment(" "))  # after a note reference, not before it
             else:
                 last.text += " "
         block.segments.extend(new)
-        block.lines.append(ln)
 
     # ---------------------------------------------------------------- blocks
 
     def page_blocks(self, pg: Page) -> list[PdfBlock]:
         blocks: list[PdfBlock] = []
         prev: Line | None = None
-        for ln in pg.lines:
+        for ln in self.drop_caps(pg.lines):
             if prev is None or self.new_block(prev, ln):
                 gap = None if prev is None else self._gap_ratio(prev, ln)
                 blocks.append(
@@ -236,6 +304,18 @@ class Layout:
         return last.text.rstrip()[-1:] not in TERMINAL
 
 
+_OPENING = "\u201c\u2018\"'"
+
+
+def _is_cap(text: str) -> bool:
+    """A drop cap: a letter, an opening quotation mark, or a quotation mark and a letter."""
+    if not 1 <= len(text) <= 2:
+        return False
+    if text[0] in _OPENING:
+        return len(text) == 1 or text[1].isalpha()
+    return text.isalpha()
+
+
 def _trailing_word(text: str) -> str:
     i = len(text)
     while i > 0 and (text[i - 1].isalpha() or text[i - 1] in "'\u2019"):
@@ -250,10 +330,32 @@ def _leading_word(text: str) -> str:
     return text[:i]
 
 
-def build_blocks(
-    pages: list[Page], metrics: Metrics, dehyph: Dehyphenator, diag: Diagnostics
+def _ref(ln: Line) -> PdfRef:
+    return PdfRef(ln.page, (round(ln.x0, 1), round(ln.y0, 1), round(ln.x1, 1), round(ln.y1, 1)))
+
+
+def build_note_blocks(
+    lines_by_note: list[list[Line]], metrics: Metrics, dehyph: Dehyphenator, diag: Diagnostics
 ) -> list[PdfBlock]:
+    """One block per note, with its lines joined (and dehyphenated) like body text."""
     layout = Layout(metrics, dehyph, diag)
+    out = []
+    for lines in lines_by_note:
+        block = PdfBlock([])
+        for ln in lines:
+            layout.append_line(block, ln)
+        out.append(block)
+    return out
+
+
+def build_blocks(
+    pages: list[Page],
+    metrics: Metrics,
+    dehyph: Dehyphenator,
+    diag: Diagnostics,
+    markers: dict[tuple[int, str], str] | None = None,
+) -> list[PdfBlock]:
+    layout = Layout(metrics, dehyph, diag, markers)
     out: list[PdfBlock] = []
     for pg in pages:
         blocks = layout.page_blocks(pg)
@@ -265,8 +367,16 @@ def build_blocks(
         ):
             head = blocks.pop(0)
             prev = out[-1]
-            for ln in head.lines:
-                layout.append_line(prev, ln)
+            # Join the already-built segments: rebuilding them from the lines would
+            # lose note references, which are consumed when first built.
+            layout.join_segments(prev, head.segments, head.lines[0])
+            prev.lines.extend(head.lines)
             prev.continued = True
         out.extend(blocks)
+    for (page, marker), _ in sorted(layout.markers.items()):
+        diag.warn(
+            "footnote-marker-missing",
+            f"Footnote {marker!r} on page {page} has no marker in the text; it was placed with "
+            "the notes but nothing links to it.",
+        )
     return out

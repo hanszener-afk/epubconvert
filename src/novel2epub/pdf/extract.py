@@ -12,7 +12,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pdfminer.high_level import extract_pages
-from pdfminer.layout import LAParams, LTAnno, LTChar, LTFigure, LTImage, LTTextContainer, LTTextLine
+from pdfminer.layout import (
+    LAParams,
+    LTAnno,
+    LTChar,
+    LTCurve,
+    LTFigure,
+    LTImage,
+    LTLine,
+    LTRect,
+    LTTextContainer,
+    LTTextLine,
+)
 from pdfminer.pdfparser import PDFSyntaxError
 
 from novel2epub.diagnostics import ConversionError
@@ -39,6 +50,8 @@ class Span:
     size: float
     bold: bool
     italic: bool
+    superscript: bool = False
+    y0: float = 0.0  # lowest glyph bottom in the span, to detect raised text
 
 
 @dataclass
@@ -49,6 +62,7 @@ class Line:
     x1: float
     y1: float
     spans: list[Span] = field(default_factory=list)
+    wide_gaps: int = 0  # gaps much wider than a space inside the line (tables, columns)
 
     @property
     def text(self) -> str:
@@ -88,6 +102,7 @@ class Page:
     lines: list[Line]
     images: list[PageImage]
     unmapped: int = 0  # glyphs with no Unicode mapping ("(cid:N)")
+    rules: list[tuple[float, float, float]] = field(default_factory=list)  # x0, y, x1
 
 
 def _clean(text: str) -> str:
@@ -110,32 +125,56 @@ def _line(obj: LTTextLine, page: int) -> tuple[Line, int]:
             key = (item.fontname, size)
             if current is None or (current.font, current.size) != key:
                 bold, italic = font_flags(item.fontname)
-                current = Span("", item.fontname, size, bold, italic)
+                current = Span("", item.fontname, size, bold, italic, y0=item.y0)
                 line.spans.append(current)
             current.text += text
+            current.y0 = min(current.y0, item.y0)
         elif isinstance(item, LTAnno):
             text = item.get_text().replace("\n", "")
             if text and current is not None:
                 current.text += text
     if line.spans:
         line.spans[-1].text = line.spans[-1].text.rstrip()
+        _mark_superscripts(line)
     return line, unmapped
 
 
-def _walk(container: object, page: int, lines: list[Line], images: list[PageImage]) -> int:
+def _mark_superscripts(line: Line) -> None:
+    """Small text raised above the line's baseline: note markers, ordinals."""
+    main = line.size
+    base = [s.y0 for s in line.spans if s.text.strip() and abs(s.size - main) < 0.5]
+    if not base:
+        return
+    baseline = min(base)
+    for s in line.spans:
+        if s.text.strip() and s.size < 0.8 * main and s.y0 > baseline + 0.2 * s.size:
+            s.superscript = True
+
+
+def _walk(
+    container: object,
+    page: int,
+    lines: list[Line],
+    images: list[PageImage],
+    rules: list[tuple[float, float, float]] | None = None,
+) -> int:
     unmapped = 0
     for obj in container:  # type: ignore[attr-defined]
+        if rules is not None and isinstance(obj, LTLine | LTRect | LTCurve):
+            if obj.height <= 2 and obj.width >= 20:
+                rules.append((obj.x0, (obj.y0 + obj.y1) / 2, obj.x1))
+            continue
         if isinstance(obj, LTTextLine):
             line, n = _line(obj, page)
             unmapped += n
             if line.text.strip():
                 lines.append(line)
         elif isinstance(obj, LTTextContainer):
-            unmapped += _walk(obj, page, lines, images)
+            unmapped += _walk(obj, page, lines, images, rules)
         elif isinstance(obj, LTImage):
             images.append(PageImage(obj.x0, obj.y0, obj.x1, obj.y1))
         elif isinstance(obj, LTFigure):
-            unmapped += _walk(obj, page, lines, images)
+            unmapped += _walk(obj, page, lines, images, rules)
     return unmapped
 
 
@@ -152,6 +191,8 @@ def _merge_same_baseline(lines: list[Line]) -> list[Line]:
                 gap = ln.x0 - prev.x1
                 if gap > 0.15 * max(prev.size, ln.size) and not prev.text.endswith(" "):
                     prev.spans[-1].text += " "
+                if gap > 2.5 * max(prev.size, ln.size):
+                    prev.wide_gaps += 1
                 prev.spans.extend(ln.spans)
                 prev.x1 = ln.x1
                 prev.y0 = min(prev.y0, ln.y0)
@@ -170,10 +211,10 @@ def extract(path: Path) -> list[Page]:
         for n, layout in enumerate(extract_pages(str(path), laparams=params), start=1):
             lines: list[Line] = []
             images: list[PageImage] = []
-            unmapped = _walk(layout, n, lines, images)
-            pages.append(
-                Page(n, layout.width, layout.height, _merge_same_baseline(lines), images, unmapped)
-            )
+            rules: list[tuple[float, float, float]] = []
+            unmapped = _walk(layout, n, lines, images, rules)
+            merged = _merge_same_baseline(lines)
+            pages.append(Page(n, layout.width, layout.height, merged, images, unmapped, rules))
     except (PDFSyntaxError, ValueError, KeyError, TypeError) as exc:
         raise ConversionError(
             "input-invalid", f"{path.name} could not be read as a PDF: {exc}"

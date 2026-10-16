@@ -7,11 +7,15 @@ from datetime import datetime
 from pathlib import Path
 
 from novel2epub.diagnostics import ConversionError, Diagnostics
-from novel2epub.ir import Book, Metadata, Resource
+from novel2epub.ir import Book, Metadata, Note, NoteKind, Paragraph, Resource
+from novel2epub.normalise.inline import build_inlines
+from novel2epub.pdf.checks import check_layout
 from novel2epub.pdf.extract import extract
+from novel2epub.pdf.footnotes import extract_footnotes
+from novel2epub.pdf.furniture import remove_furniture
 from novel2epub.pdf.hyphenation import Dehyphenator, english_words, word_counts
 from novel2epub.pdf.inspect import inspect
-from novel2epub.pdf.layout import build_blocks, measure
+from novel2epub.pdf.layout import build_blocks, build_note_blocks, measure
 from novel2epub.pdf.structure import PdfStructurer, PlacedImage
 
 
@@ -48,9 +52,20 @@ def read_pdf(path: Path, options: PdfOptions, diag: Diagnostics) -> PdfResult:
             "unmapped-glyphs",
             f"{unmapped} character(s) have no Unicode mapping in the PDF's fonts and may be wrong.",
         )
+    remove_furniture(pages, measure(pages).line_gap, diag)
     metrics = measure(pages)
+    check_layout(pages, metrics, diag)
     dehyph = Dehyphenator(word_counts(ln.text for pg in pages for ln in pg.lines), english_words())
-    blocks = build_blocks(pages, metrics, dehyph, diag)
+    markers, pdf_notes = extract_footnotes(pages, metrics.body_size, metrics.line_gap, diag)
+    blocks = build_blocks(pages, metrics, dehyph, diag, markers)
+    notes: dict[str, Note] = {}
+    note_blocks = build_note_blocks([n.lines for n in pdf_notes], metrics, dehyph, diag)
+    for pdf_note, block in zip(pdf_notes, note_blocks, strict=True):
+        label = pdf_note.marker if not pdf_note.marker.isdigit() else None
+        para = Paragraph(
+            build_inlines(block.segments), source=block.source if block.lines else None
+        )
+        notes[pdf_note.id] = Note(pdf_note.id, NoteKind.FOOTNOTE, [para], para.source, label)
 
     resources: dict[str, Resource] = {}
     placed: list[PlacedImage] = []
@@ -85,4 +100,4 @@ def read_pdf(path: Path, options: PdfOptions, diag: Diagnostics) -> PdfResult:
     )
     authors = [info.author] if info.author else []
     meta = Metadata(title=title, authors=authors, language="en")
-    return PdfResult(Book(meta, body, front, back, {}, resources), info.modified)
+    return PdfResult(Book(meta, body, front, back, notes, resources), info.modified)
