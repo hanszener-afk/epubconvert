@@ -366,7 +366,8 @@ def test_ncx_present_and_matches_identifier() -> None:
     ncx = etree.fromstring(z.read(path.rsplit("/", 1)[0] + "/" + ncx_href[0]))
     uid = ncx.xpath("//ncx:meta[@name='dtb:uid']/@content", namespaces=NS)
     assert uid == ["urn:uuid:0e8a1a3c-55a4-4c7e-9a8d-6b4b52c3f0a2"]
-    assert len(ncx.xpath("//ncx:navPoint", namespaces=NS)) == len(full_book().sections()) + 1
+    # Every section, plus the contents page and the endnotes.
+    assert len(ncx.xpath("//ncx:navPoint", namespaces=NS)) == len(full_book().sections()) + 2
 
 
 # --- CSS and source readability ------------------------------------------
@@ -418,7 +419,7 @@ def test_parts_nest_chapters_in_nav_and_ncx() -> None:
     nav_href = opf.xpath("//opf:item[@properties='nav']/@href", namespaces=NS)[0]
     nav = etree.fromstring(z.read(base + nav_href))
     top = nav.xpath("//x:nav[@epub:type='toc']/x:ol/x:li/x:a/text()", namespaces=NS)
-    assert top == ["Prologue", "Part One", "Part Two", "Epilogue"]
+    assert top == ["Contents", "Prologue", "Part One", "Part Two", "Epilogue"]
     nested = nav.xpath(
         "//x:nav[@epub:type='toc']/x:ol/x:li[x:a='Part One']/x:ol/x:li/x:a/text()", namespaces=NS
     )
@@ -426,9 +427,9 @@ def test_parts_nest_chapters_in_nav_and_ncx() -> None:
     ncx_href = opf.xpath("//opf:item[@media-type='application/x-dtbncx+xml']/@href", namespaces=NS)
     ncx = etree.fromstring(z.read(base + ncx_href[0]))
     assert ncx.xpath("//ncx:meta[@name='dtb:depth']/@content", namespaces=NS) == ["2"]
-    assert len(ncx.xpath("//ncx:navMap/ncx:navPoint", namespaces=NS)) == 4
+    assert len(ncx.xpath("//ncx:navMap/ncx:navPoint", namespaces=NS)) == 5
     orders = [int(o) for o in ncx.xpath("//ncx:navPoint/@playOrder", namespaces=NS)]
-    assert sorted(orders) == list(range(1, 8))
+    assert sorted(orders) == list(range(1, 9))
     part = [
         doc
         for _, doc in spine_docs(z)
@@ -470,3 +471,21 @@ def test_title_page_has_a_real_title_and_a_class() -> None:
     section = doc.find("x:body/x:div/x:section", NS)
     assert section.get("class") == "titlepage"
     assert section.find("x:h1", NS).text == "A Small Book"
+
+
+def test_reader_contents_lists_the_contents_page_in_reading_order() -> None:
+    z = build()
+    path, opf = opf_of(z)
+    base = path.rsplit("/", 1)[0] + "/"
+    nav_href = opf.xpath("//opf:item[@properties='nav']/@href", namespaces=NS)[0]
+    nav = etree.fromstring(z.read(base + nav_href))
+    entries = nav.xpath("//x:nav[@epub:type='toc']/x:ol/x:li/x:a", namespaces=NS)
+    front = len(full_book().front)
+    assert entries[front].text == "Contents"
+    assert entries[front].get("href") == "contents.xhtml"
+    ncx_href = opf.xpath("//opf:item[@media-type='application/x-dtbncx+xml']/@href", namespaces=NS)
+    ncx = etree.fromstring(z.read(base + ncx_href[0]))
+    labels = ncx.xpath("//ncx:navMap/ncx:navPoint/ncx:navLabel/ncx:text/text()", namespaces=NS)
+    assert labels[front] == "Contents"
+    page = etree.fromstring(z.read(base + "Text/contents.xhtml"))
+    assert "Contents" not in page.xpath("//x:a/text()", namespaces=NS)  # not listed on itself

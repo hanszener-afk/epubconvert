@@ -14,7 +14,7 @@ Use one book that exercises everything: a converted book with a title page, a de
 | Contents page | The book's own contents page has no list numbers ("1. 1. The Ditch" is wrong) |
 | Margins | Text does not touch the screen edges |
 | Paragraphs | First-line indents, no gaps between paragraphs; no indent after a heading or scene break |
-| Headings | Chapter titles centred, larger than body text, each chapter starting on a new screen (Okular excepted, see below) |
+| Headings | Chapter titles centred, larger than body text, each chapter starting on a new screen |
 | Title page and dedication | Centred, with space above |
 | Scene breaks | `* * *` centred, with space around it |
 | Italics and bold | Present where the manuscript has them |
@@ -30,7 +30,7 @@ Use one book that exercises everything: a converted book with a title page, a de
 | Apple Books | Pop-up footnotes. Both scrolling and paged views |
 | Kobo | Both the standard and the "kepub" rendering, if the shop converts to kepub |
 | Thorium | Accessibility with a screen reader |
-| Okular | Side margins present; chapter headings centred, each preceded by a thin rule. Okular shows the book as one continuous document, so chapters do not start on new pages: that is Okular, not the book |
+| Okular | Side margins present; chapter headings centred, each preceded by a thin rule. No pop-up footnotes: notes are listed, linked, at the end of each chapter |
 | Sigil | Opens without "repair" prompts; the files are easy to read and edit (one paragraph per line) |
 
 ## Known differences that are not faults

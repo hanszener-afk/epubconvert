@@ -124,8 +124,10 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     landmarks.append(("toc", "Contents", f"{TEXT_DIR}/contents.xhtml"))
     nav_toc = [package.TocEntry(t.label, t.href.removeprefix(f"{TEXT_DIR}/"), t.depth) for t in toc]
     nav_landmarks = [(t, lbl, h.removeprefix(f"{TEXT_DIR}/")) for t, lbl, h in landmarks]
+    menu_toc = [*nav_toc]
+    menu_toc.insert(len(book.front), package.TocEntry("Contents", "contents.xhtml"))
     files[f"{TEXT_DIR}/nav.xhtml"] = package.nav_xhtml(
-        meta.title, meta.language, CSS_HREF_FROM_TEXT, nav_toc, nav_landmarks
+        meta.title, meta.language, CSS_HREF_FROM_TEXT, menu_toc, nav_landmarks
     )
     manifest.append(
         package.ManifestItem("nav", f"{TEXT_DIR}/nav.xhtml", "application/xhtml+xml", "nav")
@@ -138,6 +140,9 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     files[contents_href] = package.contents_xhtml(meta.language, CSS_HREF_FROM_TEXT, nav_toc)
     manifest.append(package.ManifestItem("x-contents", contents_href, "application/xhtml+xml"))
     spine.insert(nav_spine_index, "x-contents")
+    # Readers' own contents menus list the contents page too, in reading
+    # order; otherwise some (Foliate) name it after the page before it.
+    toc.insert(len(book.front), package.TocEntry("Contents", contents_href))
     files["toc.ncx"] = package.toc_ncx(meta, toc)
     manifest.append(package.ManifestItem("ncx", "toc.ncx", "application/x-dtbncx+xml"))
     files["Styles/style.css"] = _stylesheet()

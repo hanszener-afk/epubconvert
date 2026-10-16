@@ -47,9 +47,9 @@ None of this has been verified on physical devices yet. The reasons come from th
 
 ## Okular-specific notes
 
-Okular renders EPUB through Qt's rich-text engine, which supports a small subset of HTML and CSS and has some quirks. These were found by reading Okular's EPUB backend and reproducing it with Qt, not on a reader's own machine, so treat them as well-founded rather than proven:
+Okular renders EPUB through Qt's rich-text engine, which supports a small subset of HTML and CSS and has some quirks. These were found by reading Okular's EPUB backend and reproducing it with Qt, then confirmed in Okular 23.08 itself (see `docs/reader-results.md`):
 
 - `<section>` is rewritten as `<p>`, so selectors through sections fail.
 - `body` margins, `line-height`, `display: none`, and `hidden` are ignored; ems are converted to pixels at the font's point size; percentages are misread.
 - Files after the first are inserted at the end of the document, merging each file's first block into the previous file's last one (hence `hr.chapter-start`).
-- The whole book is one continuous document, so chapters do not start on a new page.
+- Each file still starts on a new page, so chapters do. Display pages (title page, dedication) lose their space above, because it was set on the section.

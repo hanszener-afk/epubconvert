@@ -2,7 +2,7 @@
 
 Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was lost on the way.
 
-**Status: v1 (all five milestones).** DOCX and PDF conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. A portable Windows program needs no Python or Java. It has been tested on generated fixtures, a public-domain novel, and two real manuscripts. It has not yet been checked on physical e-readers (see `docs/reader-checklist.md`).
+**Status: v1 (all five milestones).** DOCX and PDF conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. A portable Windows program needs no Python or Java. It has been tested on generated fixtures, a public-domain novel, and two real manuscripts. It has been checked in Okular, calibre, and Foliate, and with the Ace accessibility checker (`docs/reader-results.md`), but not yet in Kindle, Apple Books, or Kobo, or on a physical e-reader (`docs/reader-checklist.md`).
 
 ## Windows
 
@@ -164,6 +164,7 @@ Manuscripts used for local testing go in `local/`, which git ignores. Tests that
 - `docs/markup.md`: the XHTML and class vocabulary the writer produces
 - `docs/css-decisions.md`: what the stylesheet does and avoids, and why
 - `docs/reader-checklist.md`: the manual check on real e-readers
+- `docs/reader-results.md`: what that check found in the readers tested so far
 - `tests/fixtures/README.md`: where the test corpus comes from
 
 ## Licence
