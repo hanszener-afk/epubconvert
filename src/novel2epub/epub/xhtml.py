@@ -142,6 +142,24 @@ def section_label(section: Section, number: int) -> str:
 # Document skeleton
 
 
+def page(body: etree._Element) -> etree._Element:
+    """The page wrapper inside <body> that carries the margins.
+
+    Margins live on this wrapper rather than on <body> because some reading
+    systems (Okular's Qt-based EPUB backend) ignore body margins. The empty
+    rule at the top is invisible in e-readers; in Okular, which pours every
+    file into one continuous document, it absorbs the merge Qt applies to the
+    first block of each inserted file, so chapter headings keep their own
+    formatting, and shows as a separator between chapters.
+    """
+    wrapper = sub(body, "div")
+    wrapper.set("class", "page")
+    rule = sub(wrapper, "hr")
+    rule.set("class", "chapter-start")
+    rule.set("aria-hidden", "true")
+    return wrapper
+
+
 def new_document(title: str, language: str, css_href: str) -> tuple[etree._Element, etree._Element]:
     html = etree.Element(X + "html", nsmap=NSMAP)
     html.set(f"{{{XML_NS}}}lang", language)
@@ -364,7 +382,7 @@ def render_section(
     label = section_label(section, number)
     html, body = new_document(label, ctx.language, css_href)
     body.set(EPUB_TYPE, matter)
-    sec = sub(body, "section")
+    sec = sub(page(body), "section")
     sem = SECTION_SEMANTICS[section.kind]
     if section.kind in STYLED_SECTIONS:
         sec.set("class", section.kind.value)
@@ -431,7 +449,7 @@ def render_endnotes(
 ) -> bytes:
     html, body = new_document("Notes", ctx.language, css_href)
     body.set(EPUB_TYPE, "backmatter")
-    sec = sub(body, "section")
+    sec = sub(page(body), "section")
     sec.set(EPUB_TYPE, "endnotes")
     sec.set("role", "doc-endnotes")
     sec.set("aria-labelledby", "title")

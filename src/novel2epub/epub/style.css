@@ -4,7 +4,29 @@
    what is absent are in docs/css-decisions.md. */
 
 body {
-  margin: 1.5em 8%;
+  margin: 0;
+}
+
+/* Margins live on a wrapper, not on body: some readers (Okular) ignore body
+   margins. Ems, not percentages: Okular converts ems and ignores percentages. */
+div.page {
+  margin: 1.5em 2.5em;
+}
+
+/* Engines that understand @supports get margins that scale with the
+   screen. Qt (Okular) skips this block and misreads percentages, so it
+   keeps the em margins above. */
+@supports (margin: 1%) {
+  div.page {
+    margin: 1.5em 6%;
+  }
+}
+
+/* An invisible rule opening each file (see docs/markup.md). */
+hr.chapter-start {
+  border: none;
+  height: 0;
+  margin: 0;
 }
 
 p {
@@ -118,13 +140,16 @@ section.untitled {
   padding-top: 2em;
 }
 
-/* The contents page: chapter titles carry their own numbers. */
-nav ol {
+/* The contents list: chapter titles carry their own numbers. Selected by
+   the list's own class, because Okular rewrites <section> and so breaks
+   descendant selectors that go through it. */
+ol.toc {
   list-style-type: none;
   padding-left: 0;
 }
 
-nav ol ol {
+ol.toc ol {
+  list-style-type: none;
   padding-left: 1.5em;
 }
 

@@ -121,7 +121,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
         toc.append(package.TocEntry("Notes", f"{TEXT_DIR}/endnotes.xhtml"))
         landmarks.append(("endnotes", "Notes", f"{TEXT_DIR}/endnotes.xhtml"))
 
-    landmarks.append(("toc", "Contents", f"{TEXT_DIR}/nav.xhtml#toc"))
+    landmarks.append(("toc", "Contents", f"{TEXT_DIR}/contents.xhtml"))
     nav_toc = [package.TocEntry(t.label, t.href.removeprefix(f"{TEXT_DIR}/"), t.depth) for t in toc]
     nav_landmarks = [(t, lbl, h.removeprefix(f"{TEXT_DIR}/")) for t, lbl, h in landmarks]
     files[f"{TEXT_DIR}/nav.xhtml"] = package.nav_xhtml(
@@ -130,10 +130,14 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     manifest.append(
         package.ManifestItem("nav", f"{TEXT_DIR}/nav.xhtml", "application/xhtml+xml", "nav")
     )
-    # In the spine (after the front matter) so the toc landmark points at a spine
-    # item, and so the book has a visible Contents page as Kindle recommends.
+    # A visible contents page in the reading order, after the front matter, as
+    # Kindle recommends. The navigation document itself stays out of the spine,
+    # so readers that render every spine item (Okular) never show its landmarks.
     assert nav_spine_index is not None
-    spine.insert(nav_spine_index, "nav")
+    contents_href = f"{TEXT_DIR}/contents.xhtml"
+    files[contents_href] = package.contents_xhtml(meta.language, CSS_HREF_FROM_TEXT, nav_toc)
+    manifest.append(package.ManifestItem("x-contents", contents_href, "application/xhtml+xml"))
+    spine.insert(nav_spine_index, "x-contents")
     files["toc.ncx"] = package.toc_ncx(meta, toc)
     manifest.append(package.ManifestItem("ncx", "toc.ncx", "application/x-dtbncx+xml"))
     files["Styles/style.css"] = _stylesheet()

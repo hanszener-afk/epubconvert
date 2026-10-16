@@ -20,15 +20,19 @@ OEBPS/Styles/style.css
 OEBPS/Images/<resource>.<ext>
 OEBPS/Text/cover.xhtml          (only with a cover)
 OEBPS/Text/front-NN.xhtml       front matter, in order
-OEBPS/Text/nav.xhtml            contents page (in the spine, after the front matter)
+OEBPS/Text/nav.xhtml            navigation document (not in the spine; for reading systems' menus)
+OEBPS/Text/contents.xhtml       visible contents page (in the spine, after the front matter)
 OEBPS/Text/chapter-NNN.xhtml    body sections, in order
 OEBPS/Text/back-NN.xhtml        back matter, in order
 OEBPS/Text/endnotes.xhtml       only if the book has endnotes or unreferenced notes
 ```
 
-Each content file holds one `<section>` with `epub:type` and an ARIA `role` where one exists. Titled sections start with `<h1 id="title">`. Untitled ones carry `aria-label`.
+Each content file's body is one `<div class="page">`, opening with an empty `<hr class="chapter-start" aria-hidden="true"/>` and then one `<section>`. Both exist for Okular (see `css-decisions.md`): it ignores margins on `body`, and it merges the first block of each file into the end of the previous file, which would strip a chapter heading of its formatting. The rule is invisible elsewhere. The cover file has neither.
+
+Each `<section>` with `epub:type` and an ARIA `role` where one exists. Titled sections start with `<h1 id="title">`. Untitled ones carry `aria-label`.
 
 - Display pages carry a class naming their kind: `titlepage`, `halftitle`, `part`, `dedication`, `epigraph`, `copyright`. Other untitled sections carry `untitled`.
+- The contents page is a `<section class="contents generated">` holding `<ol class="toc">` lists (nested for parts). `generated` marks text the converter wrote, which the fidelity check skips.
 - A title page's title is an `<h1>` inside the (untitled) section.
 - Text printed above a chapter's title (a quotation or document set over the heading) comes first in the section, before the `<h1>`, as in print.
 

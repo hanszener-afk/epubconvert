@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from lxml import etree
 
-from novel2epub.epub.xhtml import EPUB_TYPE, new_document, serialise, sub
+from novel2epub.epub.xhtml import EPUB_TYPE, new_document, page, serialise, sub
 from novel2epub.ir import Metadata
 
 OPF_NS = "http://www.idpf.org/2007/opf"
@@ -190,21 +190,9 @@ def _indent(el: etree._Element, level: int = 0) -> None:
         el[-1].tail = "\n" + "  " * level
 
 
-def nav_xhtml(
-    title: str,
-    language: str,
-    css_href: str,
-    toc: list[TocEntry],
-    landmarks: list[tuple[str, str, str]],  # (epub:type, label, href)
-) -> bytes:
-    html, body = new_document(title, language, css_href)
-    body.set(EPUB_TYPE, "frontmatter")
-    nav = sub(body, "nav")
-    nav.set(EPUB_TYPE, "toc")
-    nav.set("id", "toc")
-    nav.set("role", "doc-toc")
-    sub(nav, "h1").text = "Contents"
-    ol = sub(nav, "ol")
+def _toc_list(parent: etree._Element, toc: list[TocEntry]) -> None:
+    ol = sub(parent, "ol")
+    ol.set("class", "toc")
     for entry, children in _nest(toc):
         li = sub(ol, "li")
         a = sub(li, "a")
@@ -216,6 +204,24 @@ def nav_xhtml(
                 ca = sub(sub(inner, "li"), "a")
                 ca.set("href", child.href)
                 ca.text = child.label
+
+
+def nav_xhtml(
+    title: str,
+    language: str,
+    css_href: str,
+    toc: list[TocEntry],
+    landmarks: list[tuple[str, str, str]],  # (epub:type, label, href)
+) -> bytes:
+    """The EPUB navigation document. Not in the spine: reading systems use it
+    for their own contents menus; the visible contents page is separate."""
+    html, body = new_document(title, language, css_href)
+    nav = sub(body, "nav")
+    nav.set(EPUB_TYPE, "toc")
+    nav.set("id", "toc")
+    nav.set("role", "doc-toc")
+    sub(nav, "h1").text = "Contents"
+    _toc_list(nav, toc)
     lm = sub(body, "nav")
     lm.set(EPUB_TYPE, "landmarks")
     lm.set("hidden", "hidden")
@@ -226,6 +232,21 @@ def nav_xhtml(
         a.set(EPUB_TYPE, epub_type)
         a.set("href", href)
         a.text = label
+    return serialise(html)
+
+
+def contents_xhtml(language: str, css_href: str, toc: list[TocEntry]) -> bytes:
+    """The visible contents page in the reading order (Kindle's guidelines ask
+    for one). Marked as generated text, which the fidelity check ignores."""
+    html, body = new_document("Contents", language, css_href)
+    body.set(EPUB_TYPE, "frontmatter")
+    sec = sub(page(body), "section")
+    sec.set("class", "contents generated")
+    sec.set("aria-labelledby", "title")
+    h1 = sub(sec, "h1")
+    h1.set("id", "title")
+    h1.text = "Contents"
+    _toc_list(sec, toc)
     return serialise(html)
 
 

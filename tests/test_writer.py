@@ -44,7 +44,9 @@ def spine_docs(z: zipfile.ZipFile) -> list[tuple[str, etree._Element]]:
     }
     refs = opf.xpath("//opf:spine/opf:itemref/@idref", namespaces=NS)
     # The nav document is tested separately; leaving it out keeps indices stable.
-    return [(items[r], etree.fromstring(z.read(base + items[r]))) for r in refs if r != "nav"]
+    return [
+        (items[r], etree.fromstring(z.read(base + items[r]))) for r in refs if r != "x-contents"
+    ]
 
 
 # --- container and packaging ---------------------------------------------
@@ -115,7 +117,7 @@ def test_body_matter_types() -> None:
 )
 def test_section_semantics(index: int, epub_type: str, role: str | None) -> None:
     _, doc = spine_docs(build())[index]
-    section = doc.find("x:body/x:section", NS)
+    section = doc.find("x:body/x:div/x:section", NS)
     assert section.get(EPUB_TYPE) == epub_type
     assert section.get("role") == role
 
@@ -129,7 +131,7 @@ def test_every_document_has_lang_and_title() -> None:
 
 def test_section_title_is_h1_and_labels_section() -> None:
     _, doc = spine_docs(build())[5]
-    section = doc.find("x:body/x:section", NS)
+    section = doc.find("x:body/x:div/x:section", NS)
     h1 = section.find("x:h1", NS)
     assert "".join(h1.itertext()) == "Chapter One: Arrival"
     assert section.get("aria-labelledby") == h1.get("id")
@@ -137,7 +139,7 @@ def test_section_title_is_h1_and_labels_section() -> None:
 
 def test_untitled_section_gets_aria_label_not_visible_heading() -> None:
     _, doc = spine_docs(build())[3]  # dedication, no title in source
-    section = doc.find("x:body/x:section", NS)
+    section = doc.find("x:body/x:div/x:section", NS)
     assert section.find("x:h1", NS) is None
     assert section.get("aria-label") == "Dedication"
 
@@ -146,7 +148,7 @@ def test_untitled_section_gets_aria_label_not_visible_heading() -> None:
 
 
 def paragraphs(doc: etree._Element) -> list[etree._Element]:
-    return doc.findall("x:body/x:section/x:p", NS)
+    return doc.findall("x:body/x:div/x:section/x:p", NS)
 
 
 def test_first_paragraph_after_heading_and_scene_break_has_no_indent_class() -> None:
@@ -230,7 +232,7 @@ def test_second_reference_to_same_footnote_links_across_files() -> None:
 
 def test_endnotes_in_separate_file() -> None:
     _, doc = spine_docs(build())[-1]
-    section = doc.find("x:body/x:section", NS)
+    section = doc.find("x:body/x:div/x:section", NS)
     assert section.get(EPUB_TYPE) == "endnotes"
     assert section.get("role") == "doc-endnotes"
     ids = [li.get("id") for li in section.findall("x:ol/x:li", NS)]
@@ -342,7 +344,19 @@ def test_nav_has_toc_and_landmarks() -> None:
     landmarks = nav.xpath("//x:nav[@epub:type='landmarks']//x:a/@epub:type", namespaces=NS)
     assert {"cover", "bodymatter", "toc"} <= set(landmarks)
     spine = opf.xpath("//opf:spine/opf:itemref/@idref", namespaces=NS)
-    assert spine.index("nav") == 1 + len(full_book().front)  # after cover and front matter
+    assert "nav" not in spine  # its landmarks must never be shown as a page
+    assert spine.index("x-contents") == 1 + len(full_book().front)  # after cover and front matter
+
+
+def test_contents_lists_are_classed_for_styling() -> None:
+    z = build()
+    contents = etree.fromstring(z.read("OEBPS/Text/contents.xhtml"))
+    lists = contents.xpath("//x:ol", namespaces=NS)
+    assert lists and all(
+        ol.get("class") == "toc" for ol in lists if ol.getparent().tag.endswith("section")
+    )
+    page = contents.find("x:body/x:div", NS)
+    assert page.get("class") == "page" and page[0].get("class") == "chapter-start"
 
 
 def test_ncx_present_and_matches_identifier() -> None:
@@ -416,9 +430,11 @@ def test_parts_nest_chapters_in_nav_and_ncx() -> None:
     orders = [int(o) for o in ncx.xpath("//ncx:navPoint/@playOrder", namespaces=NS)]
     assert sorted(orders) == list(range(1, 8))
     part = [
-        doc for _, doc in spine_docs(z) if doc.find("x:body/x:section", NS).get(EPUB_TYPE) == "part"
+        doc
+        for _, doc in spine_docs(z)
+        if doc.find("x:body/x:div/x:section", NS).get(EPUB_TYPE) == "part"
     ]
-    assert len(part) == 2 and part[0].find("x:body/x:section", NS).get("role") == "doc-part"
+    assert len(part) == 2 and part[0].find("x:body/x:div/x:section", NS).get("role") == "doc-part"
 
 
 def test_opener_is_rendered_before_the_title_and_counted_in_order() -> None:
@@ -434,7 +450,7 @@ def test_opener_is_rendered_before_the_title_and_counted_in_order() -> None:
     data = build_epub(book, Diagnostics())
     z = zipfile.ZipFile(io.BytesIO(data))
     _, doc = spine_docs(z)[0]
-    section = doc.find("x:body/x:section", NS)
+    section = doc.find("x:body/x:div/x:section", NS)
     assert [etree.QName(c).localname for c in section][:2] == ["blockquote", "h1"]
     assert epub_text(data).main == ir_text(book).main
     assert epub_text(data).main.startswith("A notice pinned above the chapter. Chapter One")
@@ -451,6 +467,6 @@ def test_title_page_has_a_real_title_and_a_class() -> None:
     ]
     z = build(book)
     _, doc = spine_docs(z)[0]
-    section = doc.find("x:body/x:section", NS)
+    section = doc.find("x:body/x:div/x:section", NS)
     assert section.get("class") == "titlepage"
     assert section.find("x:h1", NS).text == "A Small Book"
