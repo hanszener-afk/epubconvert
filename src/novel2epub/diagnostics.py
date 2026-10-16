@@ -29,6 +29,7 @@ class Removal:
     kind: str  # e.g. "running-header", "page-number", "comment", "empty-paragraph"
     text: str
     source: SourceRef | None = None
+    context: str = ""  # source text just before the removal, to locate it precisely
 
 
 @dataclass(slots=True)
@@ -68,8 +69,10 @@ class Diagnostics:
     def error(self, code: str, message: str, source: SourceRef | None = None) -> None:
         self.issues.append(Issue(code, message, Severity.ERROR, source))
 
-    def removed(self, kind: str, text: str, source: SourceRef | None = None) -> None:
-        self.removals.append(Removal(kind, text, source))
+    def removed(
+        self, kind: str, text: str, source: SourceRef | None = None, context: str = ""
+    ) -> None:
+        self.removals.append(Removal(kind, text, source, context[-40:]))
 
     def decided(
         self,

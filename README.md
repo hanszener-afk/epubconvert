@@ -1,8 +1,98 @@
 # novel2epub
 
-Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was lost on the way.
+Converts DOCX novel manuscripts into EPUB 3, and checks that no text was lost on the way. PDF input is in progress.
 
-**Status: milestone 1 of 5.** The intermediate representation, the EPUB writer, EPUBCheck integration, and the text-fidelity comparison exist and are tested with hand-built books. There is no DOCX or PDF input yet, and no command-line tool.
+**Status: milestone 2 of 5.** DOCX conversion works end to end, with a text-fidelity check and EPUBCheck validation on every run. PDF input (milestones 3 and 4) is not available yet.
+
+## What it does
+
+```
+novel2epub manuscript.docx -o book.epub --meta book.toml --cover cover.jpg
+```
+
+For every conversion it:
+
+1. reads the manuscript into a format-neutral model of the book;
+2. writes an EPUB 3 file (one file per chapter, contents page, navigation, accessibility metadata);
+3. extracts the text from the EPUB and compares it, word for word, with text read independently from the manuscript. Anything deliberately removed (such as comments, a typed contents list, or page-number fields) is logged, and only unlogged differences count as loss;
+4. validates the EPUB with EPUBCheck;
+5. writes `report.json` and `report.md` describing the structure it found, everything it removed, every heuristic decision with its confidence, and what needs a human to check.
+
+If more than 0.1% of the text is missing, or EPUBCheck reports an error, the EPUB is written as `NAME.failed.epub` in the report directory, never at the requested output path.
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Success with warnings (see the report) |
+| 2 | Usage error |
+| 3 | Input rejected (for example tracked changes, or an unreadable file) |
+| 4 | Verification failed (text loss above the threshold, EPUBCheck errors, or warnings under `--strict`) |
+
+### Options
+
+| Option | Effect |
+|---|---|
+| `--meta FILE` | Metadata in TOML (see below) |
+| `--cover FILE` | Cover image, JPEG or PNG. Never generated |
+| `--accept-changes`, `--reject-changes` | Resolve tracked changes. Without one of these, a document with tracked changes is rejected |
+| `--smarten` | Convert straight quotes to curly quotes. Without it, quotation marks stay exactly as typed |
+| `--chapter-regex PATTERN` | Regular expression for chapter headings, when automatic detection misses them |
+| `--literal-tags` | Keep typed tags such as `<i>` as text rather than turning them into formatting |
+| `--strict` | Treat warnings as failures |
+| `--report-dir DIR` | Where to write the reports (default: next to the EPUB) |
+| `--title`, `--author`, `--language` | Override metadata |
+| `--threshold PERCENT` | Maximum text loss before failing (default 0.1) |
+| `--epubcheck JAR`, `--no-epubcheck` | Use a specific EPUBCheck, or skip validation |
+
+There is no network access and no telemetry.
+
+### Metadata file
+
+```toml
+title = "The Lighthouse Keeper's Daughter"
+authors = ["Ann Author"]
+language = "en-GB"
+identifier = "urn:uuid:0e8a1a3c-55a4-4c7e-9a8d-6b4b52c3f0a2"  # pin this; see below
+publisher = "Small Press"
+date = "2026"
+series = "Coastal Tales"
+series_index = "2"
+description = "A story about a lighthouse and the sea."
+rights = "Copyright 2026 Ann Author. All rights reserved."
+isbn = "978-0-00-000000-2"
+cover = "cover.jpg"
+cover_alt = "A lighthouse at dusk"
+
+[accessibility]
+summary = "..."
+conforms_to = "EPUB Accessibility 1.1 - WCAG 2.1 Level AA"  # only if you have checked
+certified_by = "Small Press"
+```
+
+Command-line flags override the file, which overrides the document's own properties. Unknown keys are errors, to catch typos. If no identifier is given, one is derived from the title and authors, so it changes if either changes: pin it once the book has one.
+
+## How DOCX manuscripts are read
+
+- **Formatting:** italics, bold, small caps, all caps, superscript and subscript come from Word formatting, resolved through styles the way Word does. Balanced `<i>`, `<em>`, `<b>`, and `<strong>` tags typed into the text (common when writing for AO3) are also turned into formatting, unless `--literal-tags` is given.
+- **Chapters**, in order of trust: heading styles or outline levels; `--chapter-regex`; lines such as "Chapter 12", "CHAPTER XII.", "Prologue"; and short bold, large, or capitalised lines after a page break. A typed contents list is recognised and replaced by the generated one, but only when it contains nothing that looks like prose. A manuscript with no detectable headings becomes a single chapter, with a warning.
+- **Scene breaks:** typed markers (`***`, `* * *`, `#`, a line of underscores, ornament characters), Word horizontal rules, small ornament images on a line of their own, a bottom border on the last paragraph of a scene, and two or more empty paragraphs. All become one consistent `* * *` break. A single empty paragraph is not treated as a break, but is reported for review.
+- **Front and back matter:** title page, copyright page, dedication, and epigraph before the first chapter; acknowledgements, afterword, and "About the Author" after the last. Classification is heuristic and reported with its confidence.
+- **Footnotes and endnotes** become pop-up notes. Custom note marks (such as `*`) are kept.
+- **Removed, and listed in the report:** comments, hidden text, Word's generated contents and page-number fields, empty paragraphs, and typed scene-break markers (replaced by the standard break).
+- **Text is never "fixed".** Curly or straight quotes, dashes, ellipses, and spelling stay exactly as typed. Runs of spaces collapse to one, as they would on any web page.
+
+## Limitations
+
+These are known and deliberate for v1:
+
+- Tables are flattened into paragraphs, with a warning.
+- Text boxes are kept, but placed after the paragraph they are anchored to.
+- Charts and drawing shapes without text are skipped, with a warning.
+- EMF and WMF images can only be converted to PNG on Windows. Elsewhere they stop the conversion with a clear message.
+- Only English is supported. Other languages convert, but chapter and front-matter detection expect English words.
+- No conversion is perfect. The report lists every decision the converter was unsure of; read the "Needs human review" section before publishing.
 
 ## Development
 
@@ -12,16 +102,20 @@ Python 3.11 or later, and Java 11 or later for EPUBCheck.
 python -m venv .venv
 .venv/bin/pip install -e ".[dev]"      # Windows: .venv\Scripts\pip
 .venv/bin/pytest
-.venv/bin/ruff check src tests && .venv/bin/mypy
+.venv/bin/ruff check src tests scripts && .venv/bin/mypy
+python scripts/make_fixtures.py         # regenerate tests/fixtures/docx (needs LibreOffice)
 ```
 
 The `dev` extra installs the `epubcheck` package (BSD-3-Clause), which bundles EPUBCheck 5.3.0. To use a different jar, set `NOVEL2EPUB_EPUBCHECK` to its path. EPUBCheck tests are skipped if Java or the jar cannot be found.
+
+Manuscripts used for local testing go in `local/`, which git ignores. Tests that use them are skipped when they are absent.
 
 ## Documents
 
 - `docs/PLAN.md`: architecture, dependencies and licences, decisions
 - `docs/markup.md`: the XHTML and class vocabulary the writer produces
 - `docs/css-decisions.md`: what the stylesheet does and avoids, and why
+- `tests/fixtures/README.md`: where the test corpus comes from
 
 ## Licence
 

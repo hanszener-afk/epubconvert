@@ -7,6 +7,7 @@ as a difference in the main text.
 
 from __future__ import annotations
 
+import io
 import posixpath
 import zipfile
 from dataclasses import dataclass
@@ -142,10 +143,11 @@ def _walk(el: etree._Element, main: list[str], notes: list[str], in_notes: bool)
         out.append(" ")
 
 
-def epub_text(path: Path) -> ExtractedText:
+def epub_text(path: Path | bytes) -> ExtractedText:
     main: list[str] = []
     notes: list[str] = []
-    with zipfile.ZipFile(path) as z:
+    source = io.BytesIO(path) if isinstance(path, bytes) else path
+    with zipfile.ZipFile(source) as z:
         container = etree.fromstring(z.read("META-INF/container.xml"))
         opf_path = container.find(".//{*}rootfile").get("full-path")
         assert opf_path

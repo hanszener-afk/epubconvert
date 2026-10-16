@@ -46,6 +46,10 @@ p.scene-break {
   font-variant: small-caps;
 }
 
+.caps {
+  text-transform: uppercase;
+}
+
 blockquote {
   margin: 1em 1.5em;
 }

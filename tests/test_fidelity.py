@@ -11,7 +11,7 @@ from hypothesis import strategies as st
 
 from novel2epub.diagnostics import Diagnostics
 from novel2epub.epub.writer import write_epub
-from novel2epub.verify.fidelity import compare, normalise, tokens
+from novel2epub.verify.fidelity import compare, normalise, subtract_removals, tokens
 from novel2epub.verify.text import epub_text, ir_text
 
 # --- normalisation -------------------------------------------------------
@@ -148,3 +148,31 @@ def test_ir_text_excludes_generated_text_and_includes_notes() -> None:
     assert "Nobody references this note." in t.notes
     assert "The Admiralty was in London." not in t.main
     assert "Chapter One: Arrival" in t.main
+
+
+# --- removal subtraction -------------------------------------------------
+
+
+def test_glued_removals_leave_no_space() -> None:
+    text, unmatched = subtract_removals(
+        "He does <i>not</i>. Fine.", [("<i>", "He does "), ("</i>", "He does not")]
+    )
+    assert text == "He does not. Fine."
+    assert unmatched == []
+
+
+def test_removal_prefers_matching_context() -> None:
+    ref = "In 1840 she left. It began. 4 Then it ended."
+    text, _ = subtract_removals(ref, [("4", "It began. ")])
+    assert text == "In 1840 she left. It began. Then it ended."
+
+
+def test_unlocatable_removal_is_reported() -> None:
+    text, unmatched = subtract_removals("Nothing here.", [("absent", "")])
+    assert text == "Nothing here."
+    assert unmatched == ["absent"]
+
+
+def test_removals_explain_missing_text() -> None:
+    r = compare("A header line. The story.", "The story.", [("A header line.", "")])
+    assert r.missing == [] and r.loss == 0.0

@@ -14,6 +14,7 @@ None of this has been verified on physical devices yet. The reasons come from th
 | Headings centred, margins in `em` | Relative to the reader's chosen size. No heading font sizes are set; reading-system defaults scale with the reader's settings. |
 | `page-break-after: avoid` on headings | Stops a heading being stranded at the bottom of a page. Ignored harmlessly where unsupported. |
 | `.sc { font-variant: small-caps }` | Small caps from the manuscript. If unsupported, the text shows in normal case, which loses nothing. |
+| `.caps { text-transform: uppercase }` | Word's "All caps" formatting. The text keeps its typed case; only the display changes, as in Word. |
 | `img { max-width: 100% }` | Images never overflow the screen. Percentages, not pixels. |
 | `ol.notes { list-style-type: none }` | Endnotes carry their own backlinked marker; this avoids a second number. If CSS is stripped, the number appears twice, which is ugly but loses nothing. |
 

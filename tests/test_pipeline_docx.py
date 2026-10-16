@@ -1,0 +1,141 @@
+"""Whole pipeline on the DOCX golden corpus: convert, EPUBCheck, fidelity."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import docx_fixtures as fx
+import pytest
+from docxbuild import Docx, p, r
+
+from novel2epub.pipeline import ConvertOptions, ExitCode, convert
+from novel2epub.verify.epubcheck import find_epubcheck
+
+HAS_EPUBCHECK = find_epubcheck() is not None
+LOCAL = Path(__file__).parent.parent / "local" / "manuscripts"
+
+
+def run(path: Path, tmp_path: Path, **kw: object) -> object:
+    opts = ConvertOptions(input=path, output=tmp_path / "out.epub", **kw)  # type: ignore[arg-type]
+    return convert(opts)
+
+
+@pytest.mark.parametrize("name", sorted(fx.ALL))
+def test_fixture_converts_cleanly(name: str, tmp_path: Path) -> None:
+    src = fx.ALL[name]().save(tmp_path / f"{name}.docx")
+    kw: dict[str, object] = {"revisions": "accept"} if name == "tracked" else {}
+    outcome = run(src, tmp_path, **kw)
+    assert outcome.exit_code in (ExitCode.OK, ExitCode.WARNINGS), outcome.summary()
+    assert (tmp_path / "out.epub").is_file()
+    assert outcome.fidelity_main.passes(0.001), outcome.summary()
+    assert outcome.fidelity_main.unexplained_missing == [], outcome.summary()
+    assert outcome.fidelity_main.added == [], outcome.summary()
+    assert outcome.fidelity_notes.unexplained_missing == [], outcome.summary()
+    if HAS_EPUBCHECK:
+        assert outcome.epubcheck is not None and outcome.epubcheck.messages == [], outcome.summary()
+
+
+def test_tracked_changes_rejected_without_flag(tmp_path: Path) -> None:
+    outcome = run(fx.tracked().save(tmp_path / "t.docx"), tmp_path)
+    assert outcome.exit_code is ExitCode.INPUT_REJECTED
+    assert not (tmp_path / "out.epub").exists()
+
+
+def test_reject_changes_also_converts_cleanly(tmp_path: Path) -> None:
+    outcome = run(fx.tracked().save(tmp_path / "t.docx"), tmp_path, revisions="reject")
+    assert outcome.fidelity_main.unexplained_missing == [], outcome.summary()
+
+
+def test_output_is_deterministic(tmp_path: Path) -> None:
+    src = fx.front_back().save(tmp_path / "fb.docx")
+    a = convert(ConvertOptions(input=src, output=tmp_path / "a.epub", epubcheck=False))
+    b = convert(ConvertOptions(input=src, output=tmp_path / "b.epub", epubcheck=False))
+    assert a.exit_code == b.exit_code
+    assert (tmp_path / "a.epub").read_bytes() == (tmp_path / "b.epub").read_bytes()
+
+
+def test_fidelity_failure_writes_failed_epub(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Simulate a front-end bug that silently drops a paragraph."""
+    from novel2epub.docx import reader
+
+    original = reader.read_docx
+
+    def lossy(*args: object, **kwargs: object) -> object:
+        result = original(*args, **kwargs)  # type: ignore[arg-type]
+        result.book.body[0].blocks.pop(0)
+        return result
+
+    monkeypatch.setattr(reader, "read_docx", lossy)
+    src = fx.styled().save(tmp_path / "s.docx")
+    report_dir = tmp_path / "reports"
+    outcome = convert(
+        ConvertOptions(
+            input=src, output=tmp_path / "out.epub", report_dir=report_dir, epubcheck=False
+        )
+    )
+    assert outcome.exit_code is ExitCode.VERIFICATION_FAILED
+    assert not (tmp_path / "out.epub").exists()
+    assert (report_dir / "out.failed.epub").is_file()
+    missing = " ".join(h.text for h in outcome.fidelity_main.unexplained_missing)
+    assert "entirely the wrong boat" in missing
+    assert (report_dir / "report.json").is_file()
+
+
+def test_smarten_option(tmp_path: Path) -> None:
+    src = Docx(title="T", creator="A").add(p(r('"Hello," she said.'))).save(tmp_path / "q.docx")
+    outcome = run(src, tmp_path, smarten=True, epubcheck=False)
+    assert outcome.fidelity_main.unexplained_missing == []
+    from novel2epub.verify.text import epub_text
+
+    assert "\u201cHello,\u201d she said." in epub_text(tmp_path / "out.epub").main
+
+
+def test_strict_turns_warnings_into_failure(tmp_path: Path) -> None:
+    src = fx.scene_breaks().save(tmp_path / "s.docx")  # produces warnings
+    outcome = run(src, tmp_path, strict=True, epubcheck=False)
+    assert outcome.exit_code is ExitCode.VERIFICATION_FAILED
+    assert not (tmp_path / "out.epub").exists()
+
+
+@pytest.mark.skipif(not (LOCAL / "bluesky.docx").exists(), reason="local manuscript not present")
+def test_real_manuscript(tmp_path: Path) -> None:
+    outcome = run(LOCAL / "bluesky.docx", tmp_path, title="Bluesky")
+    assert outcome.fidelity_main.unexplained_missing == [], outcome.summary()
+    assert outcome.fidelity_main.added == [], outcome.summary()
+    book = outcome.book
+    assert book is not None and len(book.body) == 1
+    if HAS_EPUBCHECK:
+        assert outcome.epubcheck is not None and outcome.epubcheck.messages == []
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "docx"
+
+
+@pytest.mark.parametrize("name", sorted(fx.ALL))
+def test_committed_fixtures_are_current(name: str) -> None:
+    """tests/fixtures/docx is regenerated by scripts/make_fixtures.py."""
+    assert (FIXTURES / f"{name}.docx").read_bytes() == fx.ALL[name]().build()
+
+
+def test_realistic_novel_from_libreoffice(tmp_path: Path) -> None:
+    outcome = run(FIXTURES / "persuasion-lo.docx", tmp_path)
+    assert outcome.exit_code in (ExitCode.OK, ExitCode.WARNINGS), outcome.summary()
+    book = outcome.book
+    assert book is not None
+    assert [s.kind.value for s in book.front] == ["titlepage"]
+    from novel2epub.epub.xhtml import plain_text
+
+    titles = [plain_text(s.title or []) for s in book.body]
+    assert len(titles) == 24
+    assert titles[0] == "CHAPTER I." and titles[-1] == "CHAPTER XXIV."
+    assert not book.back
+    toc = [r for r in outcome.diagnostics.removals if r.kind == "manual-toc"]
+    assert len(toc) == 25  # the "Contents" line and 24 entries
+    assert all(len(r.text) < 20 for r in toc)
+    assert outcome.fidelity_main.unexplained_missing == []
+    assert outcome.fidelity_main.reference_tokens > 83_000
+    assert not any(i.code == "empty-chapter" for i in outcome.diagnostics.warnings)
+    if HAS_EPUBCHECK:
+        assert outcome.epubcheck is not None and outcome.epubcheck.messages == []

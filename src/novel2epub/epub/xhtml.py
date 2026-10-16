@@ -15,6 +15,7 @@ from lxml import etree
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.ir import (
     Align,
+    AllCaps,
     Block,
     BlockQuote,
     Bold,
@@ -210,6 +211,10 @@ def _span_element(parent: etree._Element, node: Span) -> etree._Element:
     if isinstance(node, SmallCaps):
         el = sub(parent, "span")
         el.set("class", "sc")
+        return el
+    if isinstance(node, AllCaps):
+        el = sub(parent, "span")
+        el.set("class", "caps")
         return el
     if isinstance(node, Superscript):
         return sub(parent, "sup")

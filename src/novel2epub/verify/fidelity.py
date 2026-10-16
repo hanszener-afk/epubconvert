@@ -34,8 +34,56 @@ def normalise(text: str) -> str:
     return _WS.sub(" ", text).strip()
 
 
-def tokens(text: str) -> list[str]:
-    return normalise(text).split(" ") if normalise(text) else []
+_QUOTE_FOLD = str.maketrans(
+    {"\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2018": "'",
+     "\u2019": "'", "\u201a": "'", "\u201b": "'"}
+)  # fmt: skip
+
+
+def tokens(text: str, fold_quotes: bool = False) -> list[str]:
+    text = normalise(text)
+    if fold_quotes:
+        text = text.translate(_QUOTE_FOLD)
+    return text.split(" ") if text else []
+
+
+def subtract_removals(text: str, removals: list[tuple[str, str]]) -> tuple[str, list[str]]:
+    """Cut logged removals (text, context) out of the reference, in document order.
+
+    Each removal is searched for from the position of the previous one. An
+    occurrence whose preceding text matches the removal's recorded context
+    is preferred, so that a removed page number "4" is not cut from "1840".
+    Returns the remaining text and the removals that could not be found.
+    """
+    text = normalise(text)
+    cursor = 0
+    unmatched: list[str] = []
+    for raw, context in removals:
+        target = normalise(raw)
+        if not target:
+            continue
+        idx = _locate(text, target, normalise(context), cursor)
+        if idx < 0:
+            idx = _locate(text, target, normalise(context), 0)
+        if idx < 0:
+            unmatched.append(raw)
+            continue
+        text = text[:idx] + text[idx + len(target) :]
+        cursor = idx
+    return normalise(text), unmatched
+
+
+def _locate(text: str, target: str, context: str, start: int) -> int:
+    first = text.find(target, start)
+    if first < 0 or not context:
+        return first
+    tail = context[-12:].rstrip()
+    idx = first
+    while idx >= 0:
+        if text[:idx].rstrip().endswith(tail):
+            return idx
+        idx = text.find(target, idx + 1)
+    return first
 
 
 @dataclass(slots=True)
@@ -53,6 +101,13 @@ class FidelityResult:
     matched_tokens: int
     missing: list[Hunk] = field(default_factory=list)
     added: list[Hunk] = field(default_factory=list)
+
+    unmatched_removals: list[str] = field(default_factory=list)
+
+    @property
+    def unexplained_missing(self) -> list[Hunk]:
+        """Missing text not accounted for by a logged removal."""
+        return self.missing
 
     @property
     def missing_tokens(self) -> int:
@@ -81,8 +136,17 @@ class FidelityResult:
 CONTEXT = 6
 
 
-def compare(reference: str, output: str) -> FidelityResult:
-    ref, out = tokens(reference), tokens(output)
+def compare(
+    reference: str,
+    output: str,
+    removals: list[tuple[str, str]] | None = None,
+    fold_quotes: bool = False,
+) -> FidelityResult:
+    """Compare reference and output text, after cutting logged removals from the reference."""
+    unmatched: list[str] = []
+    if removals:
+        reference, unmatched = subtract_removals(reference, removals)
+    ref, out = tokens(reference, fold_quotes), tokens(output, fold_quotes)
     matched = 0
     missing: list[Hunk] = []
     added: list[Hunk] = []
@@ -96,7 +160,7 @@ def compare(reference: str, output: str) -> FidelityResult:
             missing.append(Hunk(" ".join(ref[i1:i2]), i1, before, after))
         if j2 > j1:
             added.append(Hunk(" ".join(out[j1:j2]), j1, before, after))
-    return FidelityResult(len(ref), len(out), matched, missing, added)
+    return FidelityResult(len(ref), len(out), matched, missing, added, unmatched)
 
 
 def _opcodes(ref: list[str], out: list[str]) -> list[tuple[str, int, int, int, int]]:

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import dataclasses
 import re
+import tomllib
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.ir import Metadata
@@ -87,3 +89,56 @@ def resolve(meta: Metadata, source_date: datetime | None, diag: Diagnostics) -> 
     return dataclasses.replace(
         meta, authors=authors, identifier=identifier, modified=modified, isbn=isbn
     )
+
+
+# --------------------------------------------------------------------------
+# Metadata file (TOML)
+
+_SIMPLE_FIELDS = (
+    "title", "subtitle", "language", "identifier", "publisher", "date", "series",
+    "series_index", "description", "rights", "isbn",
+)  # fmt: skip
+_A11Y_FIELDS = {"summary": "accessibility_summary", "conforms_to": "conforms_to",
+                "certified_by": "certified_by"}  # fmt: skip
+
+
+@dataclasses.dataclass
+class MetaFile:
+    fields: dict[str, object]
+    cover: Path | None = None
+    cover_alt: str | None = None
+
+
+def load_meta_file(path: Path) -> MetaFile:
+    """Read a TOML metadata file. Unknown keys are errors, to catch typos."""
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise ConversionError("meta-invalid", f"Cannot read metadata file {path}: {exc}") from exc
+    fields: dict[str, object] = {}
+    cover = None
+    cover_alt = None
+    for key, value in data.items():
+        if key in _SIMPLE_FIELDS:
+            fields[key] = str(value)
+        elif key in ("author", "authors"):
+            fields["authors"] = [value] if isinstance(value, str) else [str(v) for v in value]
+        elif key == "cover":
+            cover = (path.parent / str(value)).resolve()
+        elif key == "cover_alt":
+            cover_alt = str(value)
+        elif key == "accessibility" and isinstance(value, dict):
+            for k, v in value.items():
+                if k not in _A11Y_FIELDS:
+                    raise ConversionError(
+                        "meta-invalid", f"Unknown key accessibility.{k} in {path}."
+                    )
+                fields[_A11Y_FIELDS[k]] = str(v)
+        else:
+            raise ConversionError("meta-invalid", f"Unknown key {key!r} in {path}.")
+    return MetaFile(fields, cover, cover_alt)
+
+
+def apply_overrides(meta: Metadata, overrides: dict[str, object]) -> Metadata:
+    clean = {k: v for k, v in overrides.items() if v not in (None, "", [])}
+    return dataclasses.replace(meta, **clean)  # type: ignore[arg-type]

@@ -1,6 +1,6 @@
 # novel2epub: Step 0 plan (awaiting approval)
 
-Status: approved 2026-10-16. Milestone 1 implemented.
+Status: approved 2026-10-16. Milestones 1 and 2 implemented.
 
 ## 1. Language and runtime
 
@@ -66,7 +66,7 @@ Expected differences are reconciled from the Diagnostics log, not hidden: every 
 | Package | Licence | Why |
 |---|---|---|
 | lxml | BSD-3-Clause (bundles libxml2/libxslt, MIT) | OOXML parsing where python-docx falls short; XHTML/OPF generation |
-| python-docx | MIT | Package/rels/style access, core properties. It does not support footnotes, endnotes, or tracked changes, so those are lxml |
+| ~~python-docx~~ | MIT | Dropped in milestone 2: footnotes, endnotes, tracked changes, fields, VML, and style resolution all needed raw lxml, which left python-docx doing nothing useful |
 | pdfminer.six | MIT | Glyph-level extraction: character, font name, size, bbox; outline/bookmarks |
 | pypdfium2 | Apache-2.0 or BSD-3-Clause (PDFium: BSD-3/Apache-2.0 with permissive third-party components) | Independent reference text for the fidelity check; PDF classification (text vs scanned); rendering for OCR if ever added |
 | Pillow | MIT-CMU (HPND) | Cover and image validation (format, dimensions, colour mode) |
@@ -158,6 +158,15 @@ As in the brief. Milestone 1 delivers: IR, Diagnostics, EPUB writer, CSS, zip de
 - No headings; a working file title as the first line.
 - Mixed straight and curly quotes (42 straight against 651 curly double quotes): preserved, flagged for review.
 - `w:lastRenderedPageBreak` (layout cache) appears 33 times; it is not a real break and must be ignored.
+
+### Milestone 2 decisions
+
+- The DOCX front end reads OOXML directly with lxml (python-docx dropped; see the dependency table).
+- Logged removals are cut out of the reference text positionally, in document order, before the word diff. Each removal records the text just before it, so that, for example, a removed page number "4" is cut from the right place and not from "1840". Matching removals against the diff afterwards proved fragile, because the diff can align repeated words (a "Prologue" in a contents list with the real heading) arbitrarily.
+- Lesson recorded: a removal heuristic that misfires can hide real loss from the fidelity check, because its removal is logged and therefore "explained". During testing, a typed-contents detector swallowed a whole chapter while fidelity still read 100%. Every heuristic that removes text must therefore be bounded on its own terms (the contents remover refuses to remove anything that looks like prose), and the report shows removal counts by kind so that an unusual count stands out.
+- A single empty paragraph is not a scene break (reported for review); two or more are, when the manuscript normally has none between paragraphs.
+- Word's "All caps" keeps the typed characters and displays them in capitals through CSS, so the text survives exactly.
+- Note references never carry the formatting of Word's footnote-reference style (it double-superscripted them).
 
 ### v2 direction (not in v1)
 

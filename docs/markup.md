@@ -49,6 +49,7 @@ Each content file holds one `<section>` with `epub:type` and an ARIA `role` wher
 | `<i>` | Italic. Deliberately `<i>`, not `<em>`: in fiction, italics mark titles, foreign words, and thoughts as often as emphasis |
 | `<b>` | Bold |
 | `<span class="sc">` | Small caps |
+| `<span class="caps">` | Displayed in capitals (Word's "All caps"). The characters keep the case the author typed, so the text survives exactly; a reading system that ignores CSS shows them as typed |
 | `<sup>`, `<sub>` | Superscript, subscript |
 | `<a href>` | Hyperlink |
 | `<br/>` | Line break inside a paragraph |

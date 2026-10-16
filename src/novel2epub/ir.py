@@ -86,6 +86,11 @@ class SmallCaps(Span):
 
 
 @dataclass(slots=True)
+class AllCaps(Span):
+    """Displayed in capitals; the characters keep the case the author typed."""
+
+
+@dataclass(slots=True)
 class Superscript(Span):
     pass
 
@@ -107,7 +112,18 @@ class NoteRef:
     note_id: str
 
 
-Inline = Text | LineBreak | Italic | Bold | SmallCaps | Superscript | Subscript | Link | NoteRef
+Inline = (
+    Text
+    | LineBreak
+    | Italic
+    | Bold
+    | SmallCaps
+    | AllCaps
+    | Superscript
+    | Subscript
+    | Link
+    | NoteRef
+)
 
 
 # --------------------------------------------------------------------------
