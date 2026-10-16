@@ -1,0 +1,188 @@
+/* novel2epub stylesheet.
+   Deliberately small. No font families, font sizes, or line heights: the
+   reader's settings win. Relative units only. Reasons for each rule and for
+   what is absent are in docs/css-decisions.md. */
+
+body {
+  margin: 0;
+}
+
+/* Margins live on a wrapper, not on body: some readers (Okular) ignore body
+   margins. Ems, not percentages: Okular converts ems and ignores percentages. */
+div.page {
+  margin: 1.5em 2.5em;
+}
+
+/* Engines that understand @supports get margins that scale with the
+   screen. Qt (Okular) skips this block and misreads percentages, so it
+   keeps the em margins above. */
+@supports (margin: 1%) {
+  div.page {
+    margin: 1.5em 6%;
+  }
+}
+
+/* An invisible rule opening each file (see docs/markup.md). */
+hr.chapter-start {
+  border: none;
+  height: 0;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+  text-indent: 1.5em;
+}
+
+p.first,
+p.centre,
+p.right,
+p.scene-break,
+p.attribution {
+  text-indent: 0;
+}
+
+p.centre {
+  text-align: center;
+}
+
+p.right,
+p.attribution {
+  text-align: right;
+}
+
+h1 {
+  text-align: center;
+  margin: 2em 0 1.5em 0;
+  page-break-after: avoid;
+}
+
+h2, h3, h4, h5, h6 {
+  text-align: center;
+  margin: 1.5em 0 1em 0;
+  page-break-after: avoid;
+}
+
+p.scene-break {
+  text-align: center;
+  margin: 1em 0;
+}
+
+.sc {
+  font-variant: small-caps;
+}
+
+.caps {
+  text-transform: uppercase;
+}
+
+blockquote {
+  margin: 1em 1.5em;
+}
+
+/* Quoted letters, notices, and documents: unindented blocks with a little space. */
+blockquote p {
+  text-indent: 0;
+  margin: 0 0 0.5em 0;
+}
+
+blockquote.epigraph {
+  margin: 1em 2em 2em 2em;
+}
+
+div.verse {
+  margin: 1em 0 1em 2em;
+}
+
+div.stanza {
+  margin: 0 0 1em 0;
+}
+
+div.verse p {
+  text-indent: 0;
+}
+
+div.image,
+figure {
+  margin: 1em 0;
+  text-align: center;
+}
+
+img {
+  max-width: 100%;
+}
+
+div.cover {
+  text-align: center;
+}
+
+aside {
+  margin: 1em 0 0 0;
+}
+
+aside p,
+ol.notes p {
+  text-indent: 0;
+}
+
+ol.notes {
+  list-style-type: none;
+  margin: 0;
+  padding: 0;
+}
+
+ol.notes li {
+  margin: 0 0 1em 0;
+}
+
+/* A chapter with no title still starts a little way down the page. */
+section.untitled {
+  padding-top: 2em;
+}
+
+/* The contents list: chapter titles carry their own numbers. Selected by
+   the list's own class, because Okular rewrites <section> and so breaks
+   descendant selectors that go through it. */
+ol.toc {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+ol.toc ol {
+  list-style-type: none;
+  padding-left: 1.5em;
+}
+
+/* Display pages: title page, half title, part openers, dedication, epigraph,
+   copyright. Centred, unindented, with space above. */
+
+section.titlepage,
+section.halftitle,
+section.part,
+section.dedication,
+section.epigraph {
+  text-align: center;
+  padding-top: 3em;
+}
+
+section.titlepage h1 {
+  margin: 0 0 1em 0;
+}
+
+section.titlepage p,
+section.halftitle p,
+section.part p,
+section.dedication p,
+section.epigraph p,
+section.copyright p {
+  text-indent: 0;
+}
+
+section.copyright p {
+  margin: 0 0 0.75em 0;
+}
+
+section.part blockquote,
+section.epigraph blockquote {
+  text-align: left;
+}
