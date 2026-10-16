@@ -1,6 +1,6 @@
 # novel2epub: Step 0 plan (awaiting approval)
 
-Status: approved 2026-10-16. Milestones 1 to 4 implemented.
+Status: approved 2026-10-16. Milestones 1 to 5 implemented.
 
 ## 1. Language and runtime
 
@@ -194,6 +194,19 @@ Prompted by a rendered title page that was technically correct but ugly. Fidelit
 - PDF centring: symmetric margins of at least an em, and not set smaller than the body (a smaller symmetric block is a quotation); a line starting exactly at the paragraph indent is never centred. Consecutive centred lines in one style are one block with their line breaks kept.
 - Title pages: the largest type (PDF) or the Title style (DOCX) becomes an `<h1>`. Display pages get a class and are centred with space above.
 - Contents page: no list numbering (titles carry their own). Quoted documents: unindented blocks.
+
+### Milestone 5 decisions
+
+- Report: report.md leads with what a person must act on (review items), then fidelity, structure (each section with its detection method and confidence), decisions by kind, and removals with their text. Lists in report.md stop at 100 items (30 distinct texts per removal kind) with a pointer to report.json, which is always complete. A first cut listed all 632 removed page numbers individually; numeric removals are now summarised as a range.
+- Exit code 5 for an internal error (a bug), so that a crash is never mistaken for "success with warnings" (Python's default exit code for an uncaught exception is 1).
+- `-o` accepts a folder. Console output never fails on a character the console cannot show (Windows code pages). The Windows program pauses before closing only when it owns its console window, that is, when a file was dropped on it in Explorer; from a terminal it never pauses.
+- Report file names stay `report.json` and `report.md`, as the brief specifies. The cost: two books converted into one folder share one pair of reports. Documented rather than changed.
+- EPUBCheck makes no network connections: traced with `strace` on a book with an external link; the only connections were to a local name-service socket.
+- Windows build, packaged as a folder (PyInstaller "one-dir") in a zip rather than a single self-extracting .exe. A single-file build unpacks about 180 MB into a temporary folder on every run (several seconds each time, debris left behind after a crash, and more antivirus false positives). The folder is still portable: unzip anywhere, nothing to install. Switching is one flag in `scripts/build_exe.py` if a single file is preferred.
+- Java runtime trimmed with `jlink` to the seven modules `jdeps` finds in EPUBCheck and its libraries (55 MB). Checked by running EPUBCheck under the trimmed and the full runtime on five books, valid and invalid: identical findings. The program prefers its bundled runtime and jar over any Java on the computer, so results do not vary with what is installed.
+- Transitive runtime dependencies now in the program, all permissive: cryptography (Apache-2.0 or BSD-3-Clause; bundles OpenSSL, Apache-2.0), cffi (MIT), pycparser (BSD-3-Clause), charset-normalizer (MIT), all pulled in by pdfminer.six. Their licence files, those of the direct dependencies, Python's, EPUBCheck's and its libraries', the JDK's `legal` folder, and SCOWL's are shipped, with a summary in THIRD-PARTY-NOTICES.txt.
+- Build versions are pinned (`packaging/requirements-build.txt`) so that a rebuilt program contains what was tested.
+- Size: about 180 MB unpacked, 125 MB zipped (Java runtime 55 MB, EPUBCheck and its libraries 35 MB, the rest Python libraries).
 
 ### v2 direction (not in v1)
 

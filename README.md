@@ -2,7 +2,16 @@
 
 Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was lost on the way.
 
-**Status: milestone 4 of 5.** DOCX and PDF conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. Milestone 5 (report polish, documentation, the Windows build) remains.
+**Status: v1 (all five milestones).** DOCX and PDF conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. A portable Windows program needs no Python or Java. It has been tested on generated fixtures, a public-domain novel, and two real manuscripts. It has not yet been checked on physical e-readers (see `docs/reader-checklist.md`).
+
+## Windows
+
+Download `novel2epub-VERSION-windows.zip` and unzip it anywhere. There is nothing to install, and Java is included. Then either:
+
+- drag a `.docx` or `.pdf` onto `novel2epub.exe`. A window shows a summary and waits for Enter, and the EPUB and reports appear next to the manuscript; or
+- run `novel2epub.exe` from Command Prompt or PowerShell with the options below.
+
+The zip is built by GitHub Actions on every push (the "Windows build" workflow, under "Artifacts"), or locally with `python scripts/build_exe.py` on Windows.
 
 ## What it does
 
@@ -20,6 +29,22 @@ For every conversion it:
 
 If more than 0.1% of the text is missing, or EPUBCheck reports an error, the EPUB is written as `NAME.failed.epub` in the report directory, never at the requested output path.
 
+### Reading the report
+
+`report.md` is written for a person, in this order:
+
+1. **Result, book, and a one-line summary:** chapters, words, items removed, warnings.
+2. **Needs human review:** every warning, then every decision the converter made with confidence below 0.75 (an uncertain hyphen, a chapter heading found only by its size), each with its location: a paragraph number for DOCX, a page and position for PDF. Read this before publishing.
+3. **Text fidelity:** how much of the source text was found in the EPUB, with any missing or added words quoted in context.
+4. **Structure:** every section, how it was found (Word style, outline, pattern, size, ...) and with what confidence.
+5. **Decisions:** how many of each kind, how many were uncertain, and by which method.
+6. **Removed:** what was taken out and why, with the text itself (page numbers are summarised as a range). An unusual count is worth a look: a novel with no running headers removed, or hundreds of "comments".
+7. **EPUBCheck:** the validator's verdict and any messages.
+
+`report.json` holds the same information in full, with no lists cut short, for scripts.
+
+Both files are named `report.md` and `report.json`, so converting two books into the same folder overwrites the first book's reports. Give each book its own `--report-dir` (or output folder) if you want to keep both.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -29,11 +54,13 @@ If more than 0.1% of the text is missing, or EPUBCheck reports an error, the EPU
 | 2 | Usage error |
 | 3 | Input rejected (for example tracked changes, or an unreadable file) |
 | 4 | Verification failed (text loss above the threshold, EPUBCheck errors, or warnings under `--strict`) |
+| 5 | Internal error: a bug in novel2epub. Nothing is written; please report it with the message shown |
 
 ### Options
 
 | Option | Effect |
 |---|---|
+| `-o PATH` | The EPUB to write, or a folder to write it in. Default: next to the manuscript |
 | `--meta FILE` | Metadata in TOML (see below) |
 | `--cover FILE` | Cover image, JPEG or PNG. Never generated |
 | `--accept-changes`, `--reject-changes` | Resolve tracked changes. Without one of these, a document with tracked changes is rejected |
@@ -124,7 +151,10 @@ python -m venv .venv
 .venv/bin/ruff check src tests scripts && .venv/bin/mypy
 python scripts/make_fixtures.py         # regenerate tests/fixtures (needs LibreOffice)
 python scripts/preview.py book.epub previews --pages 1,2,3   # render pages to PNG (needs playwright)
+python scripts/build_exe.py --jdk PATH  # portable program (needs packaging/requirements-build.txt and a JDK 21)
 ```
+
+The build trims a Java runtime to the modules EPUBCheck needs (`jlink`), bundles it with EPUBCheck and the Python libraries (PyInstaller), writes the licence notices, and then converts a DOCX and a PDF with the built program while no other Java is reachable, failing unless EPUBCheck ran clean on both. PyInstaller does not cross-compile: build on Windows for Windows.
 
 The `dev` extra installs the `epubcheck` package (BSD-3-Clause), which bundles EPUBCheck 5.3.0. To use a different jar, set `NOVEL2EPUB_EPUBCHECK` to its path. EPUBCheck tests are skipped if Java or the jar cannot be found.
 
@@ -135,6 +165,7 @@ Manuscripts used for local testing go in `local/`, which git ignores. Tests that
 - `docs/PLAN.md`: architecture, dependencies and licences, decisions
 - `docs/markup.md`: the XHTML and class vocabulary the writer produces
 - `docs/css-decisions.md`: what the stylesheet does and avoids, and why
+- `docs/reader-checklist.md`: the manual check on real e-readers
 - `tests/fixtures/README.md`: where the test corpus comes from
 
 ## Licence

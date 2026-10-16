@@ -2,7 +2,7 @@
 
 The stylesheet (`src/novel2epub/epub/style.css`) is deliberately small. Each choice below is either a rule it contains or a rule it avoids, with the reason.
 
-None of this has been verified on physical devices yet. The reasons come from the reading systems' published guidelines and from widely reported behaviour. A manual device checklist will follow in milestone 5.
+None of this has been verified on physical devices yet. The reasons come from the reading systems' published guidelines and from widely reported behaviour. `docs/reader-checklist.md` is the manual check to run on real readers.
 
 ## What it does
 
