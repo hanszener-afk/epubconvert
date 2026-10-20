@@ -15,6 +15,13 @@ from novel2epub.ir import Metadata
 # Fixed namespace so that derived identifiers are stable across machines and versions.
 _NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/hanszener-afk/epubconvert")
 _BCP47 = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$")
+
+
+def is_language_tag(text: str) -> bool:
+    """True for something shaped like a BCP 47 language tag (en, en-GB)."""
+    return bool(_BCP47.match(text))
+
+
 FALLBACK_MODIFIED = datetime(2000, 1, 1, tzinfo=UTC)
 
 

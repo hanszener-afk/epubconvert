@@ -6,12 +6,13 @@ Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was
 
 ## Windows
 
-Download `novel2epub-VERSION-windows.zip` and unzip it anywhere. There is nothing to install, and Java is included. Then either:
+Download `novel2epub-VERSION-windows.zip` from the repository's Releases page and unzip it anywhere. There is nothing to install, and Java is included. The program is not signed, so the first time Windows may say "Windows protected your PC": choose "More info", then "Run anyway".
 
-- drag a `.docx` or `.pdf` onto `novel2epub.exe`. A window shows a summary and waits for Enter, and the EPUB and reports appear next to the manuscript; or
-- run `novel2epub.exe` from Command Prompt or PowerShell with the options below.
+**In a window:** double-click `novel2epub-gui.exe`, choose the manuscript, and press Convert. Everything else is optional: title, authors, language, cover, a metadata file, what to do with tracked changes, curly quotes, and a chapter heading pattern. The result appears in the window, with buttons to read the report and open the folder. Dropping a manuscript on `novel2epub-gui.exe` fills it in.
 
-The zip is built by GitHub Actions on every push (the "Windows build" workflow, under "Artifacts"), or locally with `python scripts/build_exe.py` on Windows.
+**From Command Prompt or PowerShell:** run `novel2epub.exe` with the options below. Dropping a manuscript on `novel2epub.exe` converts it straight away, with the default options, and keeps the window open until Enter is pressed.
+
+Both do exactly the same conversion and checks. The zip is published with each tagged release, and built by GitHub Actions on every push (the "Windows build" workflow, under "Artifacts"); to build it yourself, run `python scripts/build_exe.py` on Windows.
 
 ## What it does
 
