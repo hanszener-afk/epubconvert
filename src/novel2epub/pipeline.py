@@ -15,7 +15,7 @@ from novel2epub.docx import reader as docx_reader
 from novel2epub.epub.writer import build_epub
 from novel2epub.fonts import load_fonts
 from novel2epub.ir import Book, Cover, DocxRef, PdfRef, Resource
-from novel2epub.metadata import apply_overrides, load_meta_file, resolve
+from novel2epub.metadata import MetaFile, apply_overrides, load_meta_file, resolve
 from novel2epub.normalise.passes import normalise_book
 from novel2epub.pdf import reader as pdf_reader
 from novel2epub.verify.epubcheck import EpubCheckResult, find_epubcheck, run_epubcheck
@@ -44,6 +44,7 @@ class ConvertOptions:
     input: Path
     output: Path
     meta: Path | None = None
+    meta_data: MetaFile | None = None  # a book file already in memory (from the window)
     cover: Path | None = None
     revisions: str = "fail"
     smarten: bool = False
@@ -178,7 +179,7 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
             "input-unsupported", f"Unsupported input type {suffix!r}: use .docx or .pdf."
         )
 
-    meta_file = load_meta_file(opts.meta) if opts.meta else None
+    meta_file = opts.meta_data or (load_meta_file(opts.meta) if opts.meta else None)
     result: docx_reader.DocxResult | pdf_reader.PdfResult
     if suffix == ".pdf":
         if opts.revisions != "fail":
