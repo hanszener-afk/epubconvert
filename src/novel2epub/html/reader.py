@@ -144,13 +144,22 @@ def _decode(raw: bytes, path: Path) -> str:
 
 
 def read_html_text(
-    html: str, path: Path, diag: Diagnostics, chapter_regex: str | None = None
+    html: str,
+    path: Path,
+    diag: Diagnostics,
+    chapter_regex: str | None = None,
+    meta: dict[str, object] | None = None,
 ) -> HtmlResult:
-    """Read HTML given as text; `path` names it and locates its images."""
+    """Read HTML given as text; `path` names it and locates its images.
+
+    `meta` (title, authors, language, description) comes from outside the
+    page, such as a Markdown front matter block.
+    """
     if not html.strip():
         raise ConversionError("input-empty", f"{path.name} is empty.")
     doc = lxml.html.document_fromstring(html)
     reader = _Reader(doc, path, diag)
+    reader.meta.update(meta or {})
     return reader.read(chapter_regex)
 
 
@@ -172,6 +181,13 @@ class _Reader:
     # ------------------------------------------------------------ helpers
 
     def ref(self, el: etree._Element) -> HtmlRef:
+        """Where `el` came from: its Markdown line if it was rendered, else its HTML line."""
+        node: etree._Element | None = el
+        while node is not None:
+            line = node.get("data-line") if isinstance(node.tag, str) else None
+            if line and line.isdigit():
+                return HtmlRef(self.path.name, int(line))
+            node = node.getparent()
         return HtmlRef(self.path.name, getattr(el, "sourceline", None) or 0)
 
     def once(self, code: str, message: str) -> None:
@@ -208,7 +224,7 @@ class _Reader:
             self.diag.warn("comments-removed", f"Removed {len(notes.comments)} comment(s).")
 
         authors = self.meta.get("authors") or self._authors()
-        language = (self.doc.get("lang") or "").strip()
+        language = str(self.meta.get("language") or self.doc.get("lang") or "").strip()
         if not language:
             language = "en"
             self.diag.warn("language-default", "The page declares no language; using 'en'.")

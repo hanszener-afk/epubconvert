@@ -16,6 +16,7 @@ from novel2epub.epub.writer import build_epub
 from novel2epub.fonts import load_fonts
 from novel2epub.html.reader import HtmlResult, read_html
 from novel2epub.ir import Book, Cover, DocxRef, HtmlRef, PdfRef, Resource
+from novel2epub.markdown.reader import read_markdown
 from novel2epub.metadata import MetaFile, apply_overrides, load_meta_file, resolve
 from novel2epub.normalise.passes import normalise_book
 from novel2epub.pdf import reader as pdf_reader
@@ -23,6 +24,7 @@ from novel2epub.verify.epubcheck import EpubCheckResult, find_epubcheck, run_epu
 from novel2epub.verify.fidelity import FidelityResult, compare, normalise, subtract_removals
 from novel2epub.verify.reference_docx import docx_reference_text
 from novel2epub.verify.reference_html import html_reference_text
+from novel2epub.verify.reference_md import markdown_reference_text
 from novel2epub.verify.reference_pdf import pdf_reference_pages
 from novel2epub.verify.text import epub_text, ir_text
 
@@ -33,6 +35,7 @@ NOT_IN_REFERENCE = {
 
 
 HTML_TYPES = (".html", ".htm")
+MARKDOWN_TYPES = (".md", ".markdown")
 # In a web page, comments are part of the page's text, unlike Word's.
 HTML_NOT_IN_REFERENCE = NOT_IN_REFERENCE - {"comment"}
 
@@ -113,12 +116,17 @@ def _removals(diag: Diagnostics, notes: bool) -> list[tuple[str, str]]:
     return [item for _, item in sorted(picked)]
 
 
-def _html_removals(diag: Diagnostics) -> list[tuple[str, str]]:
-    """Logged removals from an HTML manuscript, in page order."""
+def _html_removals(
+    diag: Diagnostics, skip: frozenset[str] | set[str] = frozenset()
+) -> list[tuple[str, str]]:
+    """Logged removals from an HTML or Markdown manuscript, in page order."""
     picked = [
         ((rm.source.line, n), (rm.text, rm.context))
         for n, rm in enumerate(diag.removals)
-        if rm.kind not in HTML_NOT_IN_REFERENCE and rm.text and isinstance(rm.source, HtmlRef)
+        if rm.kind not in HTML_NOT_IN_REFERENCE
+        and rm.kind not in skip
+        and rm.text
+        and isinstance(rm.source, HtmlRef)
     ]
     return [item for _, item in sorted(picked)]
 
@@ -191,7 +199,7 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
     suffix = opts.input.suffix.lower()
     if not opts.input.is_file():
         raise ConversionError("input-missing", f"{opts.input} does not exist.")
-    if suffix not in (".docx", ".pdf", *HTML_TYPES):
+    if suffix not in (".docx", ".pdf", *HTML_TYPES, *MARKDOWN_TYPES):
         raise ConversionError(
             "input-unsupported",
             f"Unsupported input type {suffix!r}: use .docx, .pdf, .md, or .html.",
@@ -199,10 +207,11 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
 
     meta_file = opts.meta_data or (load_meta_file(opts.meta) if opts.meta else None)
     result: docx_reader.DocxResult | pdf_reader.PdfResult | HtmlResult
-    if suffix in HTML_TYPES:
+    if suffix in HTML_TYPES or suffix in MARKDOWN_TYPES:
         if opts.revisions != "fail":
             diag.warn("option-ignored", "--accept-changes and --reject-changes apply to DOCX only.")
-        result = read_html(opts.input, diag, opts.chapter_regex)
+        read = read_markdown if suffix in MARKDOWN_TYPES else read_html
+        result = read(opts.input, diag, opts.chapter_regex)
     elif suffix == ".pdf":
         if opts.revisions != "fail":
             diag.warn("option-ignored", "--accept-changes and --reject-changes apply to DOCX only.")
@@ -244,14 +253,22 @@ def _verify(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome, data: byt
     assert outcome.book is not None
     produced = epub_text(data)
     fold = opts.smarten
-    if opts.input.suffix.lower() in HTML_TYPES:
-        # Notes come last in every supported source, so the whole page is
-        # compared with the main text followed by the notes.
-        page, unmatched = subtract_removals(html_reference_text(opts.input), _html_removals(diag))
+    suffix = opts.input.suffix.lower()
+    if suffix in HTML_TYPES or suffix in MARKDOWN_TYPES:
+        # Notes come last in every supported source (the Markdown reference moves
+        # them there), so the whole text is compared with the main text and notes.
+        if suffix in MARKDOWN_TYPES:
+            source_text = markdown_reference_text(opts.input)
+            # markdown-it writes the [1] marks and backlinks; the Markdown has [^1].
+            removals = _html_removals(diag, skip={"note-mark", "note-backlink"})
+        else:
+            source_text = html_reference_text(opts.input)
+            removals = _html_removals(diag)
+        page, unmatched = subtract_removals(source_text, removals)
         outcome.fidelity_main = compare(page, produced.main + " " + produced.notes, None, fold)
         outcome.fidelity_main.unmatched_removals = unmatched
         outcome.fidelity_notes = compare("", "")
-    elif opts.input.suffix.lower() == ".pdf":
+    elif suffix == ".pdf":
         main, unmatched = _pdf_reference(opts.input, diag)
         outcome.fidelity_main = compare(main, produced.main, None, fold, pdf_mode=True)
         outcome.fidelity_main.unmatched_removals = unmatched
