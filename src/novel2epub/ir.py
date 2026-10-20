@@ -46,7 +46,18 @@ class ManualRef:
         return self.label
 
 
-SourceRef = DocxRef | PdfRef | ManualRef
+@dataclass(frozen=True, slots=True)
+class HtmlRef:
+    """A place in an HTML or Markdown manuscript."""
+
+    file: str
+    line: int  # one-based source line, 0 if unknown
+
+    def __str__(self) -> str:
+        return f"{self.file} line {self.line}" if self.line else self.file
+
+
+SourceRef = DocxRef | PdfRef | HtmlRef | ManualRef
 
 
 # --------------------------------------------------------------------------

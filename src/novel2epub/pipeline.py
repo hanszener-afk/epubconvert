@@ -14,13 +14,15 @@ from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.docx import reader as docx_reader
 from novel2epub.epub.writer import build_epub
 from novel2epub.fonts import load_fonts
-from novel2epub.ir import Book, Cover, DocxRef, PdfRef, Resource
+from novel2epub.html.reader import HtmlResult, read_html
+from novel2epub.ir import Book, Cover, DocxRef, HtmlRef, PdfRef, Resource
 from novel2epub.metadata import MetaFile, apply_overrides, load_meta_file, resolve
 from novel2epub.normalise.passes import normalise_book
 from novel2epub.pdf import reader as pdf_reader
 from novel2epub.verify.epubcheck import EpubCheckResult, find_epubcheck, run_epubcheck
 from novel2epub.verify.fidelity import FidelityResult, compare, normalise, subtract_removals
 from novel2epub.verify.reference_docx import docx_reference_text
+from novel2epub.verify.reference_html import html_reference_text
 from novel2epub.verify.reference_pdf import pdf_reference_pages
 from novel2epub.verify.text import epub_text, ir_text
 
@@ -28,6 +30,11 @@ from novel2epub.verify.text import epub_text, ir_text
 NOT_IN_REFERENCE = {
     "comment", "empty-paragraph", "ornament-image", "redundant-scene-break", "empty-section",
 }  # fmt: skip
+
+
+HTML_TYPES = (".html", ".htm")
+# In a web page, comments are part of the page's text, unlike Word's.
+HTML_NOT_IN_REFERENCE = NOT_IN_REFERENCE - {"comment"}
 
 
 class ExitCode(IntEnum):
@@ -106,6 +113,16 @@ def _removals(diag: Diagnostics, notes: bool) -> list[tuple[str, str]]:
     return [item for _, item in sorted(picked)]
 
 
+def _html_removals(diag: Diagnostics) -> list[tuple[str, str]]:
+    """Logged removals from an HTML manuscript, in page order."""
+    picked = [
+        ((rm.source.line, n), (rm.text, rm.context))
+        for n, rm in enumerate(diag.removals)
+        if rm.kind not in HTML_NOT_IN_REFERENCE and rm.text and isinstance(rm.source, HtmlRef)
+    ]
+    return [item for _, item in sorted(picked)]
+
+
 def _pdf_reference(path: Path, diag: Diagnostics) -> tuple[str, list[str]]:
     """The PDF reference text, with each page's logged removals cut from that page."""
     by_page: dict[int, list[tuple[str, str, str]]] = {}
@@ -174,14 +191,19 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
     suffix = opts.input.suffix.lower()
     if not opts.input.is_file():
         raise ConversionError("input-missing", f"{opts.input} does not exist.")
-    if suffix not in (".docx", ".pdf"):
+    if suffix not in (".docx", ".pdf", *HTML_TYPES):
         raise ConversionError(
-            "input-unsupported", f"Unsupported input type {suffix!r}: use .docx or .pdf."
+            "input-unsupported",
+            f"Unsupported input type {suffix!r}: use .docx, .pdf, .md, or .html.",
         )
 
     meta_file = opts.meta_data or (load_meta_file(opts.meta) if opts.meta else None)
-    result: docx_reader.DocxResult | pdf_reader.PdfResult
-    if suffix == ".pdf":
+    result: docx_reader.DocxResult | pdf_reader.PdfResult | HtmlResult
+    if suffix in HTML_TYPES:
+        if opts.revisions != "fail":
+            diag.warn("option-ignored", "--accept-changes and --reject-changes apply to DOCX only.")
+        result = read_html(opts.input, diag, opts.chapter_regex)
+    elif suffix == ".pdf":
         if opts.revisions != "fail":
             diag.warn("option-ignored", "--accept-changes and --reject-changes apply to DOCX only.")
         result = pdf_reader.read_pdf(opts.input, pdf_reader.PdfOptions(opts.chapter_regex), diag)
@@ -222,7 +244,14 @@ def _verify(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome, data: byt
     assert outcome.book is not None
     produced = epub_text(data)
     fold = opts.smarten
-    if opts.input.suffix.lower() == ".pdf":
+    if opts.input.suffix.lower() in HTML_TYPES:
+        # Notes come last in every supported source, so the whole page is
+        # compared with the main text followed by the notes.
+        page, unmatched = subtract_removals(html_reference_text(opts.input), _html_removals(diag))
+        outcome.fidelity_main = compare(page, produced.main + " " + produced.notes, None, fold)
+        outcome.fidelity_main.unmatched_removals = unmatched
+        outcome.fidelity_notes = compare("", "")
+    elif opts.input.suffix.lower() == ".pdf":
         main, unmatched = _pdf_reference(opts.input, diag)
         outcome.fidelity_main = compare(main, produced.main, None, fold, pdf_mode=True)
         outcome.fidelity_main.unmatched_removals = unmatched
