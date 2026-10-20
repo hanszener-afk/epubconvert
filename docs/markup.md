@@ -50,7 +50,7 @@ Each `<section>` with `epub:type` and an ARIA `role` where one exists. Titled se
 | `<blockquote>` | Block quotation (letters, quoted documents) |
 | `<blockquote class="epigraph">` + `<p class="attribution">` | Epigraph and its source |
 | `<div class="verse">` > `<div class="stanza">` > `<p>` per line | Poetry or song |
-| `<div class="image"><img/></div>` or `<figure><img/><figcaption/></figure>` | Image, with or without a caption |
+| `<div class="image"><img/></div>` or `<figure><img/><figcaption/></figure>` | Image, with or without a caption. A width chosen for it is written on the image as `style="width: 60%"`, a share of the text column |
 
 ## Inline
 

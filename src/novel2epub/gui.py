@@ -39,6 +39,7 @@ from novel2epub.gui_forms import (
     to_metafile,
     to_options,
 )
+from novel2epub.images import SHORT, describe_size, measure, size_findings
 from novel2epub.metadata import FONT_KEYS, load_meta_file, save_meta_file
 from novel2epub.pipeline import ConvertOptions, ExitCode, Outcome, convert
 
@@ -59,6 +60,24 @@ RESULT = {
         "bad",
     ),
 }
+
+
+def _size_check(path: Path, width: str) -> tuple[str, list[str]]:
+    """A short note for the Size column, and the full problems for the status line."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return "cannot be read", [f"{path} cannot be read."]
+    size = measure(data)
+    if size is None:
+        return "not an image", [f"{path.name} is not an image novel2epub can read."]
+    try:
+        display = float(width) if width else None
+    except ValueError:
+        display = None
+    found = size_findings(size[0], size[1], len(data), display)
+    note = "; ".join([describe_size(size[0], size[1], len(data)), *(SHORT[c] for c, _ in found)])
+    return note, [f"{path.name}: {text}." for _, text in found]
 
 
 def open_in_system(path: Path) -> None:
@@ -103,8 +122,10 @@ class App:
             for name in BOOK_FIELDS
             if name not in ("description", "images")
         }
-        self.images: list[tuple[str, str]] = []  # (file, description), in the order added
+        # (file, description, width in per cent), in the order added
+        self.images: list[tuple[str, str, str]] = []
         self.image_description_var = tk.StringVar()
+        self.image_width_var = tk.StringVar()
         self._build()
         if initial:
             self.manuscript_chosen()
@@ -297,17 +318,25 @@ class App:
             "        [image: map.png]\n\n"
             "or, with a description for readers who cannot see it:\n\n"
             "        [image: map.png | A map of the harbour at low tide]\n\n"
+            "and, if it should not fill the width, how much of it to take:\n\n"
+            "        [image: map.png | A map of the harbour at low tide | 60%]\n\n"
             "The picture is looked for among the images added below, by file name, and then "
-            "in the manuscript's folder. A description typed in the manuscript wins over one "
-            "given here. A placeholder inside a sentence is left as text.",
+            "in the manuscript's folder. What is typed in the manuscript wins over what is "
+            "given here. A placeholder inside a sentence is left as text. Size shows each "
+            "picture's pixels and file size, and anything a store or reader may object to.",
             justify="left",
             wraplength=740,
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
-        tree = ttk.Treeview(tab, columns=("file", "description"), show="headings", height=8)
+        columns = ("file", "size", "width", "description")
+        tree = ttk.Treeview(tab, columns=columns, show="headings", height=6)
         tree.heading("file", text="Image file")
+        tree.heading("size", text="Size")
+        tree.heading("width", text="Width")
         tree.heading("description", text="Description (alt text)")
-        tree.column("file", width=330)
-        tree.column("description", width=360)
+        tree.column("file", width=150)
+        tree.column("size", width=310)
+        tree.column("width", width=60, anchor="center")
+        tree.column("description", width=220)
         tree.grid(row=1, column=0, sticky="nsew")
         bar = ttk.Scrollbar(tab, command=tree.yview)
         bar.grid(row=1, column=1, sticky="ns")
@@ -326,29 +355,45 @@ class App:
         ttk.Entry(actions, textvariable=self.image_description_var).grid(
             row=0, column=3, sticky="ew", padx=6
         )
-        ttk.Button(actions, text="Set", command=self._describe_selected).grid(row=0, column=4)
+        ttk.Label(actions, text="Width %").grid(row=0, column=4)
+        ttk.Spinbox(
+            actions, textvariable=self.image_width_var, from_=5, to=100, increment=5, width=5
+        ).grid(row=0, column=5, padx=6)
+        ttk.Button(actions, text="Set", command=self._describe_selected).grid(row=0, column=6)
+        ttk.Label(
+            actions,
+            text="Leave the width blank to show the picture at its natural size, never wider "
+            "than the text.",
+            foreground="#555",
+        ).grid(row=1, column=0, columnspan=7, sticky="w", pady=(4, 0))
 
     def add_images(self, paths: list[Path]) -> None:
-        known = {file for file, _ in self.images}
+        known = {file for file, _, _ in self.images}
         for path in paths:
             if str(path) not in known:
-                self.images.append((str(path), ""))
+                self.images.append((str(path), "", ""))
                 known.add(str(path))
         self._refresh_images()
 
     def remove_image(self, file: str) -> None:
-        self.images = [(f, d) for f, d in self.images if f != file]
+        self.images = [entry for entry in self.images if entry[0] != file]
         self._refresh_images()
 
-    def describe_image(self, file: str, description: str) -> None:
-        self.images = [(f, description if f == file else d) for f, d in self.images]
+    def describe_image(self, file: str, description: str, width: str = "") -> None:
+        self.images = [
+            (f, description, width) if f == file else (f, d, w) for f, d, w in self.images
+        ]
         self._refresh_images()
 
     def _refresh_images(self) -> None:
         tree = self.image_tree
         tree.delete(*tree.get_children())
-        for file, description in self.images:
-            tree.insert("", "end", iid=file, values=(Path(file).name, description))
+        for file, description, width in self.images:
+            shown = f"{width}%" if width else "natural"
+            tree.insert(
+                "", "end", iid=file,
+                values=(Path(file).name, _size_check(Path(file), width)[0], shown, description),
+            )  # fmt: skip
 
     def _selected_image(self) -> str | None:
         selection = self.image_tree.selection()
@@ -356,8 +401,15 @@ class App:
 
     def _image_selected(self, _event: Any = None) -> None:
         file = self._selected_image()
-        description = dict(self.images).get(file or "", "")
-        self.image_description_var.set(description)
+        entry = next((e for e in self.images if e[0] == file), None)
+        self.image_description_var.set(entry[1] if entry else "")
+        self.image_width_var.set(entry[2] if entry else "")
+        if entry:
+            problems = _size_check(Path(entry[0]), entry[2])[1]
+            if problems:
+                self._set_status(" ".join(problems), "warn")
+            else:
+                self._set_status(f"{Path(entry[0]).name}: no size problems found.", "ok")
 
     def _choose_images(self) -> None:
         from tkinter import filedialog
@@ -377,7 +429,11 @@ class App:
     def _describe_selected(self) -> None:
         file = self._selected_image()
         if file:
-            self.describe_image(file, self.image_description_var.get().strip())
+            self.describe_image(
+                file,
+                self.image_description_var.get().strip(),
+                self.image_width_var.get().strip().rstrip("%"),
+            )
 
     def _build_appearance(self, tab: Any) -> None:
         ttk = self.ttk

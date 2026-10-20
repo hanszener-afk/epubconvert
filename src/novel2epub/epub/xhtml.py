@@ -351,8 +351,9 @@ def _image(parent: etree._Element, block: Image, ctx: RenderContext) -> None:
     if block.alt is None:
         ctx.diag.warn(
             "image-no-alt",
-            f'Image {block.resource_id!r} has no alt text; written with alt="". '
-            "Add a description before claiming accessibility conformance.",
+            f'Image {block.resource_id!r} has no description (alt text); written with alt="". '
+            "Add one in the manuscript, after a | in an [image: ...] placeholder, or on the "
+            "Images tab; readers who cannot see the picture depend on it.",
             block.source,
         )
     if block.caption:
@@ -363,6 +364,8 @@ def _image(parent: etree._Element, block: Image, ctx: RenderContext) -> None:
     img = sub(container, "img")
     img.set("src", href)
     img.set("alt", block.alt or "")
+    if block.width is not None:
+        img.set("style", f"width: {block.width:g}%")
     if block.caption:
         render_inlines(sub(container, "figcaption"), block.caption, ctx)
 

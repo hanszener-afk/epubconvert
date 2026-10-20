@@ -12,6 +12,7 @@ from PIL import Image as PILImage
 
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.epub import package, xhtml
+from novel2epub.images import describe_size, measure, size_findings
 from novel2epub.ir import (
     STYLE_LIMITS,
     Block,
@@ -68,6 +69,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     spine: list[str] = []
 
     image_href, image_items = _images(book, diag)
+    _check_image_sizes(book, diag)
     manifest.extend(image_items)
 
     sections = [
@@ -332,6 +334,31 @@ def _check_raster(rid: str, data: bytes, expected: str) -> None:
         raise ConversionError(
             "image-type-mismatch", f"Image {rid!r} is declared {expected} but is {actual}."
         )
+
+
+def _check_image_sizes(book: Book, diag: Diagnostics) -> None:
+    """Warn about images too large for the stores, or too small for their width."""
+    uses: dict[str, list[Image]] = {}
+    blocks = [b for s in book.sections() for b in _walk_blocks(s.opener + s.blocks)]
+    blocks += [b for n in book.notes.values() for b in _walk_blocks(n.blocks)]
+    for block in blocks:
+        uses.setdefault(block.resource_id, []).append(block)
+    for rid, images in sorted(uses.items()):
+        res = book.resources[rid]
+        size = measure(res.data)
+        if size is None:
+            continue
+        widest = (
+            None
+            if any(i.width is None for i in images)
+            else max(i.width for i in images if i.width is not None)
+        )
+        for code, problem in size_findings(size[0], size[1], len(res.data), widest):
+            diag.warn(
+                code,
+                f"Image {rid!r} ({describe_size(size[0], size[1], len(res.data))}): {problem}.",
+                images[0].source,
+            )
 
 
 def _check_cover(book: Book, diag: Diagnostics) -> None:

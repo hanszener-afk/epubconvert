@@ -104,7 +104,7 @@ def _book_form(tmp_path: Path) -> BookForm:
         side_margin="3", top_margin="", bottom_margin="", indent="1.2",
         paragraph_gap="", block_paragraphs=False, line_spacing="1.4",
         font_body=str(font),
-        images=((str(cover), "The cover again"), (str(font.with_name("map.png")), "")),
+        images=((str(cover), "The cover again", "60"), (str(font.with_name("map.png")), "", "")),
     )  # fmt: skip
 
 
@@ -116,8 +116,8 @@ def test_book_form_becomes_a_book_file_and_back(tmp_path: Path) -> None:
     assert meta.fields["description"] == "Two lines.\nOf description."
     assert meta.style == Style(side_margin=3, indent=1.2, line_spacing=1.4)
     assert meta.fonts["body"] == Path(form.font_body)
-    assert meta.images == [(Path(form.images[0][0]), "The cover again"),
-                           (Path(form.images[1][0]), None)]  # fmt: skip
+    assert meta.images == [(Path(form.images[0][0]), "The cover again", 60.0),
+                           (Path(form.images[1][0]), None, None)]  # fmt: skip
     path = tmp_path / "book.toml"
     save_meta_file(meta, path)
     assert from_metafile(load_meta_file(path)) == form
@@ -131,7 +131,7 @@ def test_blank_book_form_means_nothing_chosen() -> None:
 
 
 def test_added_image_that_is_missing_is_reported(tmp_path: Path) -> None:
-    result = to_metafile(BookForm(images=((str(tmp_path / "gone.png"), ""),)))
+    result = to_metafile(BookForm(images=((str(tmp_path / "gone.png"), "", ""),)))
     assert isinstance(result, str) and "gone.png" in result
 
 
@@ -270,10 +270,13 @@ def test_images_tab_adds_describes_and_removes(tmp_path: Path) -> None:
     app = App()
     try:
         app.add_images([tmp_path / "a.png", tmp_path / "b.png", tmp_path / "a.png"])
-        assert [Path(f).name for f, _ in app.book_form().images] == ["a.png", "b.png"]
-        app.describe_image(str(tmp_path / "b.png"), "A bee")
-        assert app.book_form().images[1][1] == "A bee"
+        assert [Path(f).name for f, _, _ in app.book_form().images] == ["a.png", "b.png"]
+        app.describe_image(str(tmp_path / "b.png"), "A bee", "40")
+        assert app.book_form().images[1][1:] == ("A bee", "40")
+        # The size column shows pixels and file size, and flags a small picture.
+        size = app.image_tree.set(str(tmp_path / "b.png"), "size")
+        assert size.startswith("20 x 20") and "may look soft" in size
         app.remove_image(str(tmp_path / "a.png"))
-        assert [Path(f).name for f, _ in app.book_form().images] == ["b.png"]
+        assert [Path(f).name for f, _, _ in app.book_form().images] == ["b.png"]
     finally:
         app.root.destroy()

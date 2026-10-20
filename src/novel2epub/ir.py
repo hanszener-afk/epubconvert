@@ -195,6 +195,7 @@ class Image:
     alt: str | None  # None means the source had no alt text
     caption: list[Inline] | None = None
     source: SourceRef | None = None
+    width: float | None = None  # per cent of the text width; None: natural size, up to full
 
 
 Block = Paragraph | Heading | SceneBreak | BlockQuote | Epigraph | Verse | Image

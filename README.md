@@ -131,10 +131,13 @@ Pictures already in a manuscript (in Word, in a PDF, `![alt](file.png)` in Markd
 ```
 [image: map.png]
 [image: map.png | A map of the harbour at low tide]
+[image: map.png | A map of the harbour at low tide | 60%]
+[image: map.png | 60%]
 ```
 
 - **The file** is looked for among the images added on the window's Images tab (or `[[images]]` in the book file), by file name, and then in the manuscript's folder. Case does not matter.
 - **The description** after `|` is read aloud by screen readers; without one there, the description given on the Images tab is used, and without either, the report warns.
+- **The width** (the last part, such as `60%`) is how much of the text column the picture takes, from 5% to 100%. Without one, the picture shows at its natural size, never wider than the text. A width typed in the placeholder wins over one given on the Images tab.
 - **Only a line of its own** becomes a picture. A placeholder inside a sentence stays as text, with a warning.
 - **A missing picture stops the conversion**, naming the placeholder and where it is, rather than publishing the book without it.
 - The placeholder is listed in the report as replaced, and the text check accounts for it.
@@ -145,7 +148,18 @@ In the book file:
 [[images]]
 file = "art/map.png"
 description = "A map of the harbour at low tide"
+width = 60
 ```
+
+### Is an image the right size?
+
+Every picture in the book (from the manuscript or a placeholder) is checked, and the report warns when one is:
+
+- **over 5.6 million pixels** (width times height): Apple Books' limit for pictures inside a book;
+- **over 5 MB**: the widely reported Kindle limit per picture (not confirmed in Amazon's current guidelines); large pictures also raise Kindle's delivery charge;
+- **too few pixels for the width chosen for it**: fewer than about 600 pixels for a picture stretched across the whole text column (proportionally fewer for a narrower width), so it may look soft on a tablet. This is a rule of thumb, not a store rule. A picture with no width set is shown at its own size and never stretched, so it is not flagged.
+
+The Images tab shows the same for each added picture: its size in pixels and file size, and a short flag; selecting a picture shows the full explanation. Pictures are never resized or recompressed: the converter only reports.
 
 ### Layout and fonts: what readers do with them
 

@@ -2,11 +2,15 @@
 
     [image: map.png]
     [image: map.png | A map of the harbour at low tide]
+    [image: map.png | A map of the harbour at low tide | 60%]
+    [image: map.png | 60%]
 
 The text after "|" is the image's description (its alt text, read aloud by
-screen readers). The file is looked for among the images added for the book
-(the window's Images tab, or [[images]] in the book file), by file name, and
-then in the manuscript's folder. Case does not matter.
+screen readers); a last part such as "60%" is the width the picture takes of
+the text column (otherwise its natural size, never wider than the column).
+The file is looked for among the images added for the book (the window's
+Images tab, or [[images]] in the book file), by file name, and then in the
+manuscript's folder. Case does not matter.
 
 A placeholder inside a sentence is left as text, with a warning: images go
 between paragraphs. A placeholder whose image cannot be found stops the
@@ -25,31 +29,33 @@ from novel2epub.images import to_core_image
 from novel2epub.ir import Block, Book, Image, Paragraph, Resource, Section
 from novel2epub.normalise.inline import plain_text
 
-PLACEHOLDER = re.compile(r"^\s*\[\s*image\s*:\s*([^\]|]+?)\s*(?:\|\s*([^\]]*?)\s*)?\]\s*$", re.I)
+PLACEHOLDER = re.compile(r"^\s*\[\s*image\s*:\s*([^\]|]+?)\s*(?:\|([^\]]*))?\]\s*$", re.I)
+_WIDTH = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*%\s*$")
+WIDTH_RANGE = (5.0, 100.0)
 _ANYWHERE = re.compile(r"\[\s*image\s*:[^\]]*\]", re.I)
 
 
 class _Images:
     def __init__(
-        self, book: Book, added: list[tuple[Path, str | None]], folders: list[Path]
+        self, book: Book, added: list[tuple[Path, str | None, float | None]], folders: list[Path]
     ) -> None:
         self.book = book
-        self.added = {path.name.lower(): (path, alt) for path, alt in added}
+        self.added = {path.name.lower(): (path, alt, width) for path, alt, width in added}
         self.folders = folders
         self.ids: dict[Path, str] = {}
 
-    def find(self, name: str) -> tuple[Path, str | None] | None:
+    def find(self, name: str) -> tuple[Path, str | None, float | None] | None:
         found = self.added.get(Path(name).name.lower())
         if found:
             return found
         for folder in self.folders:
             candidate = folder / name
             if candidate.is_file():
-                return candidate, None
+                return candidate, None, None
             if folder.is_dir():  # the same name in another case
                 for entry in folder.iterdir():
                     if entry.name.lower() == name.lower() and entry.is_file():
-                        return entry, None
+                        return entry, None, None
         return None
 
     def resource(self, path: Path, where: str) -> str:
@@ -68,9 +74,10 @@ class _Images:
         return self.ids[key]
 
 
-def insert_images(
-    book: Book, added: list[tuple[Path, str | None]], folders: list[Path], diag: Diagnostics
-) -> None:
+Added = list[tuple[Path, str | None, float | None]]  # file, description, width
+
+
+def insert_images(book: Book, added: Added, folders: list[Path], diag: Diagnostics) -> None:
     """Replace placeholder paragraphs in `book` with the images they name."""
     images = _Images(book, added, folders)
     for section in book.sections():
@@ -98,10 +105,18 @@ def _blocks(
                 )
             out.append(block)
             continue
-        name, description = match.group(1), match.group(2)
+        name = match.group(1)
+        parts = [p.strip() for p in (match.group(2) or "").split("|")]
+        width_match = _WIDTH.match(parts[-1]) if parts else None
+        width = float(width_match.group(1)) if width_match else None
+        description = (parts[0] if (len(parts) > 1 or not width_match) else "") if parts else ""
         where = f"the placeholder {text.strip()!r}" + (
             f" at {block.source}" if block.source else ""
         )
+        if width is not None and not WIDTH_RANGE[0] <= width <= WIDTH_RANGE[1]:
+            raise ConversionError(
+                "image-width", f"The width in {where} must be between 5% and 100%."
+            )
         found = images.find(name)
         if found is None:
             raise ConversionError(
@@ -109,17 +124,10 @@ def _blocks(
                 f"No image named {name!r} for {where}. Add it on the Images tab, or put it in "
                 "the manuscript's folder.",
             )
-        path, added_description = found
+        path, added_description, added_width = found
         alt = (description or "").strip() or added_description
-        if not alt:
-            diag.warn(
-                "image-description-missing",
-                f"The image {name} has no description for readers who cannot see it. Add one "
-                "after a | in the placeholder, or on the Images tab.",
-                block.source,
-            )
         rid = images.resource(path, where)
         diag.removed("image-placeholder", text.strip(), block.source)
         diag.info("image-placed", f"Placed {path.name} for {where}.", block.source)
-        out.append(Image(rid, alt or None, source=block.source))
+        out.append(Image(rid, alt or None, source=block.source, width=width or added_width))
     return out

@@ -52,7 +52,7 @@ def test_added_images_are_found_by_file_name_and_give_a_description(tmp_path: Pa
     (elsewhere / "ship.jpg").write_bytes(jpeg(400, 300))
     book = _book("[image: ship.jpg]")
     diag = Diagnostics()
-    insert_images(book, [(elsewhere / "ship.jpg", "The Mary Rose")], [tmp_path], diag)
+    insert_images(book, [(elsewhere / "ship.jpg", "The Mary Rose", None)], [tmp_path], diag)
     image = book.body[0].blocks[0]
     assert isinstance(image, Image) and image.alt == "The Mary Rose"
     assert book.resources[image.resource_id].media_type == "image/jpeg"
@@ -61,7 +61,7 @@ def test_added_images_are_found_by_file_name_and_give_a_description(tmp_path: Pa
 def test_placeholder_description_wins_over_the_added_one(tmp_path: Path) -> None:
     (tmp_path / "ship.jpg").write_bytes(jpeg(400, 300))
     book = _book("[image: ship.jpg | Her sails at dawn]")
-    insert_images(book, [(tmp_path / "ship.jpg", "The Mary Rose")], [], Diagnostics())
+    insert_images(book, [(tmp_path / "ship.jpg", "The Mary Rose", None)], [], Diagnostics())
     assert book.body[0].blocks[0].alt == "Her sails at dawn"  # type: ignore[union-attr]
 
 
@@ -72,11 +72,49 @@ def test_same_image_twice_is_stored_once(tmp_path: Path) -> None:
     assert len(book.resources) == 1
 
 
-def test_missing_description_is_warned(tmp_path: Path) -> None:
+def test_missing_description_is_warned_once_by_the_writer(tmp_path: Path) -> None:
+    from novel2epub.epub.writer import build_epub
+
     (tmp_path / "map.png").write_bytes(png(300, 200))
+    book = _book("[image: map.png]")
     diag = Diagnostics()
-    insert_images(_book("[image: map.png]"), [], [tmp_path], diag)
-    assert any(i.code == "image-description-missing" for i in diag.warnings)
+    insert_images(book, [], [tmp_path], diag)
+    build_epub(book, diag)
+    warned = [i for i in diag.warnings if i.code == "image-no-alt"]
+    assert len(warned) == 1 and "[image:" in warned[0].message
+
+
+@pytest.mark.parametrize(
+    ("text", "alt", "width"),
+    [
+        ("[image: map.png | A map | 60%]", "A map", 60.0),
+        ("[image: map.png | 40%]", None, 40.0),
+        ("[image: map.png | | 50 %]", None, 50.0),
+        ("[image: map.png | Fifty percent of the harbour]", "Fifty percent of the harbour", None),
+    ],
+)
+def test_placeholder_width(tmp_path: Path, text: str, alt: str | None, width: float | None) -> None:
+    (tmp_path / "map.png").write_bytes(png(300, 200))
+    book = _book(text)
+    insert_images(book, [], [tmp_path], Diagnostics())
+    image = book.body[0].blocks[0]
+    assert isinstance(image, Image)
+    assert image.alt == alt and image.width == width
+
+
+def test_placeholder_width_out_of_range_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "map.png").write_bytes(png(300, 200))
+    with pytest.raises(ConversionError) as exc:
+        insert_images(_book("[image: map.png | A map | 150%]"), [], [tmp_path], Diagnostics())
+    assert "between 5% and 100%" in str(exc.value)
+
+
+def test_width_from_the_images_tab_and_the_placeholder_wins(tmp_path: Path) -> None:
+    (tmp_path / "map.png").write_bytes(png(300, 200))
+    book = _book("[image: map.png]", "[image: map.png | 30%]")
+    insert_images(book, [(tmp_path / "map.png", "A map", 70.0)], [], Diagnostics())
+    first, second = book.body[0].blocks
+    assert first.width == 70.0 and second.width == 30.0  # type: ignore[union-attr]
 
 
 def test_missing_image_stops_with_its_location(tmp_path: Path) -> None:
@@ -109,13 +147,13 @@ def test_book_file_keeps_added_images(tmp_path: Path) -> None:
     (tmp_path / "art" / "ship.jpg").write_bytes(jpeg(10, 10))
     meta = MetaFile(
         {"title": "T"},
-        images=[((tmp_path / "art" / "map.png").resolve(), "A map"),
-                ((tmp_path / "art" / "ship.jpg").resolve(), None)],
+        images=[((tmp_path / "art" / "map.png").resolve(), "A map", 60.0),
+                ((tmp_path / "art" / "ship.jpg").resolve(), None, None)],
     )  # fmt: skip
     path = tmp_path / "book.toml"
     save_meta_file(meta, path)
     text = path.read_text(encoding="utf-8")
-    assert '[[images]]\nfile = "art/map.png"\ndescription = "A map"' in text
+    assert '[[images]]\nfile = "art/map.png"\ndescription = "A map"\nwidth = 60' in text
     assert load_meta_file(path) == meta
 
 
@@ -170,6 +208,6 @@ def test_html_with_a_placeholder_and_an_added_image(tmp_path: Path) -> None:
         "<h1>Two</h1><p>The end.</p></body></html>",
         encoding="utf-8",
     )
-    meta = MetaFile({}, images=[(pictures / "map.png", "The route")])
+    meta = MetaFile({}, images=[(pictures / "map.png", "The route", None)])
     _check(convert(ConvertOptions(input=src, output=tmp_path / "maps.epub", meta_data=meta,
                                   epubcheck=TOOL is not None)))  # fmt: skip

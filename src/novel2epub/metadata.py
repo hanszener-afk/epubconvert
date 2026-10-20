@@ -120,8 +120,8 @@ class MetaFile:
     cover_alt: str | None = None
     style: Style = dataclasses.field(default_factory=Style)
     fonts: dict[str, Path] = dataclasses.field(default_factory=dict)
-    # Images for [image: file] placeholders: (file, description or None).
-    images: list[tuple[Path, str | None]] = dataclasses.field(default_factory=list)
+    # Images for [image: file] placeholders: (file, description, width in per cent).
+    images: list[tuple[Path, str | None, float | None]] = dataclasses.field(default_factory=list)
 
 
 def load_meta_file(path: Path) -> MetaFile:
@@ -163,13 +163,23 @@ def load_meta_file(path: Path) -> MetaFile:
                     raise ConversionError(
                         "meta-invalid", f"Each [[images]] entry in {path} needs a file."
                     )
-                unknown = set(entry) - {"file", "description"}
+                unknown = set(entry) - {"file", "description", "width"}
                 if unknown:
                     raise ConversionError(
                         "meta-invalid", f"Unknown key images.{sorted(unknown)[0]} in {path}."
                     )
                 description = str(entry["description"]) if entry.get("description") else None
-                meta.images.append(((path.parent / str(entry["file"])).resolve(), description))
+                width = entry.get("width")
+                if width is not None and (
+                    isinstance(width, bool)
+                    or not isinstance(width, int | float)
+                    or not 5 <= width <= 100
+                ):
+                    raise ConversionError(
+                        "meta-invalid", f"images.width in {path} must be a number from 5 to 100."
+                    )
+                file = (path.parent / str(entry["file"])).resolve()
+                meta.images.append((file, description, float(width) if width else None))
         else:
             raise ConversionError("meta-invalid", f"Unknown key {key!r} in {path}.")
     return meta
@@ -259,10 +269,12 @@ def save_meta_file(meta: MetaFile, path: Path) -> None:
         if present:
             lines += ["", f"[{name}]"]
             lines += [f"{k} = {_toml_value(v)}" for k, v in present]
-    for image, description in meta.images:
+    for image, description, width in meta.images:
         lines += ["", "[[images]]", f"file = {_toml_string(_relative(image, base))}"]
         if description:
             lines.append(f"description = {_toml_string(description)}")
+        if width is not None:
+            lines.append(f"width = {width:g}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
