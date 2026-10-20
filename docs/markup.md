@@ -18,6 +18,8 @@ OEBPS/content.opf
 OEBPS/toc.ncx
 OEBPS/Styles/style.css
 OEBPS/Images/<resource>.<ext>
+OEBPS/Fonts/<slot>.ttf|otf      only with chosen fonts: body, body_italic, body_bold, body_bold_italic, headings
+META-INF/com.apple.ibooks.display-options.xml   only with chosen fonts: tells Apple Books to use them
 OEBPS/Text/cover.xhtml          (only with a cover)
 OEBPS/Text/front-NN.xhtml       front matter, in order
 OEBPS/Text/nav.xhtml            navigation document (not in the spine; for reading systems' menus)

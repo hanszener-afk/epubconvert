@@ -5,7 +5,7 @@
 # ruff: noqa
 import os
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
 ROOT = os.environ["N2E_ROOT"]
 RUNTIME = os.environ["N2E_RUNTIME"]
@@ -15,6 +15,8 @@ datas = [(RUNTIME, "runtime"), (EPUBCHECK, "epubcheck")]
 datas += collect_data_files("novel2epub") + collect_data_files("pdfminer")
 binaries = []
 hiddenimports = []
+# fontTools imports its table modules by name at run time.
+hiddenimports += collect_submodules("fontTools.ttLib.tables")
 for package in ("pypdfium2", "pypdfium2_raw"):
     d, b, h = collect_all(package)
     datas += d

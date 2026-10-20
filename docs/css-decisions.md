@@ -23,12 +23,16 @@ None of this has been verified on physical devices yet. The reasons come from th
 | `img { max-width: 100% }` | Images never overflow the screen. Percentages, not pixels. |
 | `ol.notes { list-style-type: none }` | Endnotes carry their own backlinked marker; this avoids a second number. If CSS is stripped, the number appears twice, which is ugly but loses nothing. |
 
+## Settings chosen for a book
+
+The author's Appearance settings (or the book file's `[style]` and `[fonts]`) are written as a short block after the base stylesheet, under a comment saying so, so a book with no settings has exactly the stylesheet above. Margins replace both the plain `div.page` rule and its `@supports` percentage version. Lengths are in em only.
+
 ## What it avoids, and why
 
 | Avoided | Reason |
 |---|---|
-| `font-family`, `@font-face`, embedded fonts | The reader's font choice must win. Embedded fonts also add licensing questions and file size. |
-| `font-size` and `line-height` on text | The same: these override reader settings, and Kindle in particular reacts badly to fixed line heights. |
+| `font-family`, `@font-face`, embedded fonts | Not by default: the reader's font choice should win, and embedded fonts add licensing questions and file size. Added only when the author chooses fonts (Appearance tab or `[fonts]`), after the base stylesheet; readers can still override them, and Kindle uses them only under "Publisher font". |
+| `font-size` and `line-height` on text | Not by default: these override reader settings, and Kindle in particular reacts badly to fixed line heights. `line-height` is added only when the author sets a line spacing. |
 | `text-align` on `body` or on body paragraphs | Justification is a reader setting on Kindle, Kobo, and Apple Books. Forcing it removes that choice. |
 | Absolute units (`px`, `pt`, `cm`) and `rem`, `vw`, `vh` | Absolute units ignore reader scaling. `rem` and viewport units are inconsistently supported in older Kindle and Kobo renderers. |
 | `position`, `float` | Unreliable or ignored on Kindle and older Kobo firmware. Drop caps built from floats are a common source of broken layouts, so drop caps are not styled. |

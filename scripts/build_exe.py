@@ -65,6 +65,10 @@ BUNDLED = [
     "cffi",
     "pycparser",
     "pypdfium2",
+    "fonttools",
+    "markdown-it-py",
+    "mdit-py-plugins",
+    "mdurl",
 ]
 
 NOTICES = """\
@@ -209,7 +213,8 @@ def licences(folder: Path, epubcheck_src: Path, java: str) -> None:
             parts = f.parts
             in_dist_info = parts[0].endswith(".dist-info")
             named = f.name.upper().startswith(("LICENSE", "LICENCE", "COPYING", "NOTICE"))
-            if in_dist_info and (named or "licenses" in parts[1:-1]):
+            # Licences inside the package too (mdit-py-plugins keeps one per plugin).
+            if (in_dist_info and "licenses" in parts[1:-1]) or (named and f.suffix != ".py"):
                 dest = target.joinpath(*parts[1:])
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(Path(str(dist.locate_file(f))), dest)
@@ -257,7 +262,41 @@ def licences(folder: Path, epubcheck_src: Path, java: str) -> None:
     (folder / "README.txt").write_text(README.format(version=__version__), encoding="utf-8")
 
 
+SMOKE_MARKDOWN = """# Smoke Test
+
+## One
+
+Some *emphasis* and a note.[^1]
+
+***
+
+More text.
+
+## Two
+
+The end.
+
+[^1]: The note.
+"""
+
+
+def _passed(proc: subprocess.CompletedProcess[str], report_path: Path, label: str) -> None:
+    print(proc.stderr)
+    if proc.returncode not in (0, 1):
+        sys.exit(f"Smoke test failed on {label}: exit code {proc.returncode}.")
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    ec = report["epubcheck"]
+    if not ec or not ec["ran"] or ec["errors"] or ec["warnings"]:
+        sys.exit(f"Smoke test failed on {label}: EPUBCheck result {ec}.")
+    if report["fidelity"]["main"]["match_ratio"] != 1.0:
+        sys.exit(f"Smoke test failed on {label}: text fidelity below 100%.")
+
+
 def smoke_test(folder: Path) -> None:
+    sys.path.insert(0, str(ROOT / "tests"))
+    from fontbuild import make_font
+    from html_fixtures import FOOTNOTES
+
     exe = folder / EXE
     env = {k: v for k, v in os.environ.items() if k not in ("JAVA_HOME", "NOVEL2EPUB_EPUBCHECK")}
     env["PATH"] = os.environ.get("SYSTEMROOT", "/nonexistent")  # no java on PATH
@@ -267,6 +306,9 @@ def smoke_test(folder: Path) -> None:
         ROOT / "tests" / "fixtures" / "pdf" / "clean.pdf",
     ]
     with tempfile.TemporaryDirectory() as tmp:
+        html = Path(tmp) / "notes.html"
+        html.write_text(FOOTNOTES, encoding="utf-8")
+        fixtures.append(html)
         for src in fixtures:
             out = Path(tmp) / src.stem
             proc = subprocess.run(
@@ -276,15 +318,30 @@ def smoke_test(folder: Path) -> None:
                 text=True,
                 check=False,
             )
-            print(proc.stderr)
-            if proc.returncode not in (0, 1):
-                sys.exit(f"Smoke test failed on {src.name}: exit code {proc.returncode}.")
-            report = json.loads((out / f"{src.stem}.report.json").read_text(encoding="utf-8"))
-            ec = report["epubcheck"]
-            if not ec or not ec["ran"] or ec["errors"] or ec["warnings"]:
-                sys.exit(f"Smoke test failed on {src.name}: EPUBCheck result {ec}.")
-            if report["fidelity"]["main"]["match_ratio"] != 1.0:
-                sys.exit(f"Smoke test failed on {src.name}: text fidelity below 100%.")
+            _passed(proc, out / f"{src.stem}.report.json", src.name)
+
+        # Markdown with a book file: style settings and an embedded font (fontTools
+        # loads its table code dynamically, so this proves it was packaged).
+        book = Path(tmp) / "md"
+        book.mkdir()
+        (book / "smoke.md").write_text(SMOKE_MARKDOWN, encoding="utf-8")
+        (book / "Body.ttf").write_bytes(make_font("Smoke Serif"))
+        (book / "smoke.toml").write_text(
+            'authors = ["Tester"]\nlanguage = "en-GB"\n\n[style]\nside_margin = 3\n\n'
+            '[fonts]\nbody = "Body.ttf"\n',
+            encoding="utf-8",
+        )
+        proc = subprocess.run(
+            [str(exe), str(book / "smoke.md"), "--meta", str(book / "smoke.toml")],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        _passed(proc, book / "smoke.report.json", "Markdown with a book file")
+        with zipfile.ZipFile(book / "smoke.epub") as z:
+            if "OEBPS/Fonts/body.ttf" not in z.namelist():
+                sys.exit("Smoke test failed: the font was not embedded.")
         # The windowed program, through its window, on a copy (it writes beside the input).
         src = Path(tmp) / "gui" / "styled.docx"
         src.parent.mkdir()
