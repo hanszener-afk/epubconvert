@@ -84,6 +84,8 @@ class BookForm:
     font_body_bold: str = ""
     font_body_bold_italic: str = ""
     font_headings: str = ""
+    # Images for [image: file] placeholders: (file, description).
+    images: tuple[tuple[str, str], ...] = ()
 
     def is_blank(self) -> bool:
         return self == BookForm()
@@ -157,6 +159,11 @@ def to_metafile(form: BookForm) -> MetaFile | str:
             if not path.is_file():
                 return f"The {FONT_LABELS[key].lower()} font {path} cannot be found."
             meta.fonts[key] = path
+    for file, description in form.images:
+        path = Path(file)
+        if not path.is_file():
+            return f"The image {path} cannot be found. Remove it from the Images tab or restore it."
+        meta.images.append((path, description.strip() or None))
     return meta
 
 
@@ -178,6 +185,7 @@ def from_metafile(meta: MetaFile) -> BookForm:
     form.block_paragraphs = meta.style.block_paragraphs
     for key, path in meta.fonts.items():
         setattr(form, f"font_{key}", str(path))
+    form.images = tuple((str(path), description or "") for path, description in meta.images)
     return form
 
 

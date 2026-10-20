@@ -12,6 +12,7 @@ Download `novel2epub-VERSION-windows.zip` from the repository's Releases page an
 
 - **Convert:** where to save the EPUB, what to do with tracked changes, curly quotes, and a chapter heading pattern. The result appears here, with buttons to read the report and open the folder.
 - **Book details:** every metadata field (title, subtitle, authors, language, identifier, publisher, date, series, description, rights, ISBN, cover and its description, and the accessibility fields). "Generate" makes a permanent identifier.
+- **Images:** pictures for `[image: ...]` placeholders (see below), each with an optional description.
 - **Appearance:** side, top, and bottom margins; indented or block paragraphs, indent, space between paragraphs, and line spacing; and fonts (see below).
 
 "Save" keeps the Book details and Appearance tabs in a book file (`.toml`). A book file with the manuscript's name, beside it, is opened when the manuscript is chosen, so each book remembers its settings. Dropping a manuscript on `novel2epub-gui.exe` fills it in.
@@ -122,6 +123,29 @@ headings = "fonts/Display-Regular.ttf"
 ```
 
 Command-line flags override the file, which overrides the document's own properties. Unknown keys and out-of-range values are errors, to catch typos. If no identifier is given, one is derived from the title and authors, so it changes if either changes: pin it once the book has one.
+
+### Adding pictures with placeholders
+
+Pictures already in a manuscript (in Word, in a PDF, `![alt](file.png)` in Markdown, `<img>` in HTML) are kept. To add one that is not, type a line of its own, in any of the formats, where it should go:
+
+```
+[image: map.png]
+[image: map.png | A map of the harbour at low tide]
+```
+
+- **The file** is looked for among the images added on the window's Images tab (or `[[images]]` in the book file), by file name, and then in the manuscript's folder. Case does not matter.
+- **The description** after `|` is read aloud by screen readers; without one there, the description given on the Images tab is used, and without either, the report warns.
+- **Only a line of its own** becomes a picture. A placeholder inside a sentence stays as text, with a warning.
+- **A missing picture stops the conversion**, naming the placeholder and where it is, rather than publishing the book without it.
+- The placeholder is listed in the report as replaced, and the text check accounts for it.
+
+In the book file:
+
+```toml
+[[images]]
+file = "art/map.png"
+description = "A map of the harbour at low tide"
+```
 
 ### Layout and fonts: what readers do with them
 

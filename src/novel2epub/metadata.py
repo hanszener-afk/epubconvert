@@ -120,6 +120,8 @@ class MetaFile:
     cover_alt: str | None = None
     style: Style = dataclasses.field(default_factory=Style)
     fonts: dict[str, Path] = dataclasses.field(default_factory=dict)
+    # Images for [image: file] placeholders: (file, description or None).
+    images: list[tuple[Path, str | None]] = dataclasses.field(default_factory=list)
 
 
 def load_meta_file(path: Path) -> MetaFile:
@@ -155,6 +157,19 @@ def load_meta_file(path: Path) -> MetaFile:
                         f"Unknown key fonts.{k} in {path}; use {', '.join(FONT_KEYS)}.",
                     )
                 meta.fonts[k] = (path.parent / str(v)).resolve()
+        elif key == "images" and isinstance(value, list):
+            for entry in value:
+                if not isinstance(entry, dict) or "file" not in entry:
+                    raise ConversionError(
+                        "meta-invalid", f"Each [[images]] entry in {path} needs a file."
+                    )
+                unknown = set(entry) - {"file", "description"}
+                if unknown:
+                    raise ConversionError(
+                        "meta-invalid", f"Unknown key images.{sorted(unknown)[0]} in {path}."
+                    )
+                description = str(entry["description"]) if entry.get("description") else None
+                meta.images.append(((path.parent / str(entry["file"])).resolve(), description))
         else:
             raise ConversionError("meta-invalid", f"Unknown key {key!r} in {path}.")
     return meta
@@ -244,6 +259,10 @@ def save_meta_file(meta: MetaFile, path: Path) -> None:
         if present:
             lines += ["", f"[{name}]"]
             lines += [f"{k} = {_toml_value(v)}" for k, v in present]
+    for image, description in meta.images:
+        lines += ["", "[[images]]", f"file = {_toml_string(_relative(image, base))}"]
+        if description:
+            lines.append(f"description = {_toml_string(description)}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

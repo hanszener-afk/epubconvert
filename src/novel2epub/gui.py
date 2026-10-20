@@ -101,8 +101,10 @@ class App:
         self.book_vars: dict[str, Any] = {
             name: tk.BooleanVar() if name == "block_paragraphs" else tk.StringVar()
             for name in BOOK_FIELDS
-            if name != "description"
+            if name not in ("description", "images")
         }
+        self.images: list[tuple[str, str]] = []  # (file, description), in the order added
+        self.image_description_var = tk.StringVar()
         self._build()
         if initial:
             self.manuscript_chosen()
@@ -130,12 +132,15 @@ class App:
         tabs.grid(row=1, column=0, sticky="nsew")
         convert_tab = ttk.Frame(tabs, padding=10)
         details_tab = ttk.Frame(tabs, padding=10)
+        images_tab = ttk.Frame(tabs, padding=10)
         look_tab = ttk.Frame(tabs, padding=10)
         tabs.add(convert_tab, text="Convert")
         tabs.add(details_tab, text="Book details")
+        tabs.add(images_tab, text="Images")
         tabs.add(look_tab, text="Appearance")
         self._build_convert(convert_tab)
         self._build_details(details_tab)
+        self._build_images(images_tab)
         self._build_appearance(look_tab)
 
         self.status = ttk.Label(outer, textvariable=self.status_var, wraplength=740)
@@ -281,6 +286,99 @@ class App:
             wraplength=660,
         ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
+    def _build_images(self, tab: Any) -> None:
+        ttk = self.ttk
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+        ttk.Label(
+            tab,
+            text="To put a picture between two paragraphs, type a line of its own in the "
+            "manuscript:\n\n"
+            "        [image: map.png]\n\n"
+            "or, with a description for readers who cannot see it:\n\n"
+            "        [image: map.png | A map of the harbour at low tide]\n\n"
+            "The picture is looked for among the images added below, by file name, and then "
+            "in the manuscript's folder. A description typed in the manuscript wins over one "
+            "given here. A placeholder inside a sentence is left as text.",
+            justify="left",
+            wraplength=740,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+        tree = ttk.Treeview(tab, columns=("file", "description"), show="headings", height=8)
+        tree.heading("file", text="Image file")
+        tree.heading("description", text="Description (alt text)")
+        tree.column("file", width=330)
+        tree.column("description", width=360)
+        tree.grid(row=1, column=0, sticky="nsew")
+        bar = ttk.Scrollbar(tab, command=tree.yview)
+        bar.grid(row=1, column=1, sticky="ns")
+        tree.configure(yscrollcommand=bar.set)
+        tree.bind("<<TreeviewSelect>>", self._image_selected)
+        self.image_tree = tree
+
+        actions = ttk.Frame(tab)
+        actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        actions.columnconfigure(3, weight=1)
+        ttk.Button(actions, text="Add images...", command=self._choose_images).grid(row=0, column=0)
+        ttk.Button(actions, text="Remove", command=self._remove_selected).grid(
+            row=0, column=1, padx=(6, 12)
+        )
+        ttk.Label(actions, text="Description").grid(row=0, column=2)
+        ttk.Entry(actions, textvariable=self.image_description_var).grid(
+            row=0, column=3, sticky="ew", padx=6
+        )
+        ttk.Button(actions, text="Set", command=self._describe_selected).grid(row=0, column=4)
+
+    def add_images(self, paths: list[Path]) -> None:
+        known = {file for file, _ in self.images}
+        for path in paths:
+            if str(path) not in known:
+                self.images.append((str(path), ""))
+                known.add(str(path))
+        self._refresh_images()
+
+    def remove_image(self, file: str) -> None:
+        self.images = [(f, d) for f, d in self.images if f != file]
+        self._refresh_images()
+
+    def describe_image(self, file: str, description: str) -> None:
+        self.images = [(f, description if f == file else d) for f, d in self.images]
+        self._refresh_images()
+
+    def _refresh_images(self) -> None:
+        tree = self.image_tree
+        tree.delete(*tree.get_children())
+        for file, description in self.images:
+            tree.insert("", "end", iid=file, values=(Path(file).name, description))
+
+    def _selected_image(self) -> str | None:
+        selection = self.image_tree.selection()
+        return str(selection[0]) if selection else None
+
+    def _image_selected(self, _event: Any = None) -> None:
+        file = self._selected_image()
+        description = dict(self.images).get(file or "", "")
+        self.image_description_var.set(description)
+
+    def _choose_images(self) -> None:
+        from tkinter import filedialog
+
+        paths = filedialog.askopenfilenames(
+            title="Add images",
+            filetypes=[("Images", "*.jpg *.jpeg *.png *.gif *.webp"), ("All files", "*.*")],
+        )
+        if paths:
+            self.add_images([Path(p) for p in paths])
+
+    def _remove_selected(self) -> None:
+        file = self._selected_image()
+        if file:
+            self.remove_image(file)
+
+    def _describe_selected(self) -> None:
+        file = self._selected_image()
+        if file:
+            self.describe_image(file, self.image_description_var.get().strip())
+
     def _build_appearance(self, tab: Any) -> None:
         ttk = self.ttk
         tab.columnconfigure(0, weight=1)
@@ -365,6 +463,7 @@ class App:
     def book_form(self) -> BookForm:
         values: dict[str, Any] = {name: var.get() for name, var in self.book_vars.items()}
         values["description"] = str(self.description.get("1.0", "end")).rstrip("\n")
+        values["images"] = tuple(self.images)
         return BookForm(**values)
 
     def set_book_form(self, form: BookForm) -> None:
@@ -372,6 +471,8 @@ class App:
             var.set(getattr(form, name))
         self.description.delete("1.0", "end")
         self.description.insert("1.0", form.description)
+        self.images = list(form.images)
+        self._refresh_images()
 
     def open_book_file(self, path: Path) -> bool:
         try:

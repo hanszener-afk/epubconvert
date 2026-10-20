@@ -19,6 +19,7 @@ from novel2epub.ir import Book, Cover, DocxRef, HtmlRef, PdfRef, Resource
 from novel2epub.markdown.reader import read_markdown
 from novel2epub.metadata import MetaFile, apply_overrides, load_meta_file, resolve
 from novel2epub.normalise.passes import normalise_book
+from novel2epub.normalise.placeholders import insert_images
 from novel2epub.pdf import reader as pdf_reader
 from novel2epub.verify.epubcheck import EpubCheckResult, find_epubcheck, run_epubcheck
 from novel2epub.verify.fidelity import FidelityResult, compare, normalise, subtract_removals
@@ -243,6 +244,10 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
     if meta_file is not None:
         book.style = meta_file.style
         book.fonts = load_fonts(meta_file.fonts, diag)
+    folders = [opts.input.resolve().parent]
+    if opts.meta is not None:
+        folders.append(opts.meta.resolve().parent)
+    insert_images(book, meta_file.images if meta_file else [], folders, diag)
 
     normalise_book(book, diag, smarten=opts.smarten)
     book.metadata = resolve(book.metadata, result.source_date, diag)

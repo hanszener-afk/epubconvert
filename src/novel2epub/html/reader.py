@@ -23,7 +23,6 @@ check (which reads the page independently) accounts for it.
 from __future__ import annotations
 
 import base64
-import io
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -32,13 +31,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import lxml.html
 from lxml import etree
-from PIL import Image as PILImage
 
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.docx.structure import Structurer
 from novel2epub.docx.styles import ParaProps
 from novel2epub.docx.walker import RawImage, RawPara
 from novel2epub.html.css import ClassStyles, alignment, apply_flags, hidden, page_break_before
+from novel2epub.images import to_core_image
 from novel2epub.ir import Book, HtmlRef, Metadata, Note, NoteKind, Paragraph, Resource
 from novel2epub.normalise.inline import Segment, build_inlines
 
@@ -59,7 +58,6 @@ NOT_TEXT = {"script", "style", "noscript", "template", "head", "title", "meta", 
 # Text that is not part of a book (form controls, drawings): removed, and logged.
 NOT_BOOK = {"svg", "math", "button", "input", "select", "textarea", "iframe", "object",
             "canvas", "video", "audio", "map", "option"}  # fmt: skip
-CORE_FORMATS = {"JPEG": "image/jpeg", "PNG": "image/png", "GIF": "image/gif", "WEBP": "image/webp"}
 EMU_PER_PX = 9525
 _SPACE = re.compile(r"[ \t\n\r\f]+")
 _AO3_SUFFIX = re.compile(r"\s*\[Archive of Our Own\]\s*$")
@@ -582,7 +580,7 @@ class _Reader:
         if src not in self.images_by_src:
             data = self._image_data(src, el)
             rid = f"img{len(self.images_by_src) + 1}"
-            data, media_type, (w, h) = _to_core(data, src, self.ref(el))
+            data, media_type, (w, h) = to_core_image(data, src, str(self.ref(el)))
             self.resources[rid] = Resource(rid, media_type, data)
             self.images_by_src[src] = (rid, w, h)
         rid, w, h = self.images_by_src[src]
@@ -614,31 +612,6 @@ class _Reader:
             raise ConversionError(
                 "image-missing", f"The image {src} at {self.ref(el)} cannot be read: {exc}"
             ) from exc
-
-
-def _to_core(data: bytes, src: str, where: HtmlRef) -> tuple[bytes, str, tuple[int, int]]:
-    """The image as an EPUB core type (converting to PNG if needed), and its size."""
-    try:
-        with PILImage.open(io.BytesIO(data)) as im:
-            size = im.size
-            fmt = im.format or ""
-            if fmt in CORE_FORMATS:
-                return data, CORE_FORMATS[fmt], size
-            im.load()
-            out = io.BytesIO()
-            converted = im.convert("RGBA") if im.mode not in ("RGB", "RGBA", "L", "LA") else im
-            converted.save(out, format="PNG", optimize=False)
-            return out.getvalue(), "image/png", size
-    except (OSError, ValueError) as exc:
-        if data.lstrip().startswith(b"<"):
-            raise ConversionError(
-                "image-unsupported",
-                f"The image {src} at {where} is SVG, which is not supported yet. "
-                "Replace it with a PNG or JPEG.",
-            ) from exc
-        raise ConversionError(
-            "image-unsupported", f"The image {src} at {where} cannot be read: {exc}"
-        ) from exc
 
 
 def _px(value: str | None) -> int | None:
