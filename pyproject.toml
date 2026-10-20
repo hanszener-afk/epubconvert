@@ -62,5 +62,5 @@ warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
 # lxml-stubs is unmaintained and wrong for lxml 5+ (e.g. default-namespace nsmaps).
-module = ["lxml", "lxml.*", "pdfminer", "pdfminer.*", "pypdfium2", "pypdfium2.*"]
+module = ["lxml", "lxml.*", "pdfminer", "pdfminer.*", "pypdfium2", "pypdfium2.*", "fontTools", "fontTools.*"]
 ignore_missing_imports = true

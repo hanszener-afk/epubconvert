@@ -13,6 +13,7 @@ from PIL import Image as PILImage
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.docx import reader as docx_reader
 from novel2epub.epub.writer import build_epub
+from novel2epub.fonts import load_fonts
 from novel2epub.ir import Book, Cover, DocxRef, PdfRef, Resource
 from novel2epub.metadata import apply_overrides, load_meta_file, resolve
 from novel2epub.normalise.passes import normalise_book
@@ -207,6 +208,9 @@ def _build(opts: ConvertOptions, diag: Diagnostics, outcome: Outcome) -> bytes:
         )
         book.resources[resource.id] = resource
         book.cover = cover
+    if meta_file is not None:
+        book.style = meta_file.style
+        book.fonts = load_fonts(meta_file.fonts, diag)
 
     normalise_book(book, diag, smarten=opts.smarten)
     book.metadata = resolve(book.metadata, result.source_date, diag)
