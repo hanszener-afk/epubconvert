@@ -12,10 +12,13 @@ from PIL import Image as PILImage
 
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.epub import package, xhtml
+from novel2epub.images import describe_size, measure, size_findings
 from novel2epub.ir import (
+    STYLE_LIMITS,
     Block,
     BlockQuote,
     Book,
+    EmbeddedFont,
     Epigraph,
     Heading,
     Image,
@@ -26,6 +29,7 @@ from novel2epub.ir import (
     Section,
     SectionKind,
     Span,
+    Style,
     Verse,
 )
 
@@ -65,6 +69,7 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     spine: list[str] = []
 
     image_href, image_items = _images(book, diag)
+    _check_image_sizes(book, diag)
     manifest.extend(image_items)
 
     sections = [
@@ -145,7 +150,11 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
     toc.insert(len(book.front), package.TocEntry("Contents", contents_href))
     files["toc.ncx"] = package.toc_ncx(meta, toc)
     manifest.append(package.ManifestItem("ncx", "toc.ncx", "application/x-dtbncx+xml"))
-    files["Styles/style.css"] = _stylesheet()
+    files["Styles/style.css"] = _stylesheet() + style_css(book.style, book.fonts).encode()
+    for font in book.fonts:
+        href = f"Fonts/{font.slot}.{font.extension}"
+        files[href] = font.data
+        manifest.append(package.ManifestItem(f"font-{font.slot}", href, font.media_type))
     manifest.append(package.ManifestItem("css", "Styles/style.css", "text/css"))
 
     images_in_text = [b for s in book.sections() for b in _walk_blocks(s.opener + s.blocks)]
@@ -163,7 +172,9 @@ def build_epub(book: Book, diag: Diagnostics) -> bytes:
 
     for href, data in _image_files(book, image_href).items():
         files[href] = data
-    return _zip(files, meta.modified.timetuple()[:6])
+    # Apple Books shows embedded fonts only when the book asks it to.
+    extra = {APPLE_OPTIONS: APPLE_OPTIONS_XML} if book.fonts else {}
+    return _zip(files, meta.modified.timetuple()[:6], extra)
 
 
 # --------------------------------------------------------------------------
@@ -186,6 +197,80 @@ def _add(
 
 def _stylesheet() -> bytes:
     return (importlib_resources.files("novel2epub.epub") / "style.css").read_bytes()
+
+
+APPLE_OPTIONS = "META-INF/com.apple.ibooks.display-options.xml"
+APPLE_OPTIONS_XML = (
+    b'<?xml version="1.0" encoding="UTF-8"?>\n<display_options>\n'
+    b'  <platform name="*">\n    <option name="specified-fonts">true</option>\n  </platform>\n'
+    b"</display_options>\n"
+)
+_DEFAULT_PAGE = ("1.5em", "2.5em", "1.5em", "6%")  # top, side, bottom, side under @supports
+
+
+def _em(value: float) -> str:
+    return f"{value:g}em"
+
+
+def style_css(style: Style, fonts: list[EmbeddedFont]) -> str:
+    """CSS for the book's own settings, appended after the base stylesheet.
+
+    Empty when nothing is chosen, so the default book is unchanged.
+    """
+    for name, (low, high) in STYLE_LIMITS.items():
+        value = getattr(style, name)
+        if value is not None and not low <= value <= high:
+            raise ValueError(f"{name} must be between {low} and {high}, not {value}.")
+    rules: list[str] = []
+    margins = (style.top_margin, style.side_margin, style.bottom_margin)
+    if any(m is not None for m in margins):
+        top, side, bottom = (
+            _em(v) if v is not None else d for v, d in zip(margins, _DEFAULT_PAGE[:3], strict=True)
+        )
+        rules.append(f"div.page {{ margin: {top} {side} {bottom} {side}; }}")
+        wide = side if style.side_margin is not None else _DEFAULT_PAGE[3]
+        rules.append(
+            f"@supports (margin: 1%) {{ div.page {{ margin: {top} {wide} {bottom} {wide}; }} }}"
+        )
+    para = []
+    if style.block_paragraphs:
+        para.append("text-indent: 0;")
+        gap = style.paragraph_gap if style.paragraph_gap is not None else 0.8
+        para.append(f"margin-bottom: {_em(gap)};")
+    else:
+        if style.indent is not None:
+            para.append(f"text-indent: {_em(style.indent)};")
+        if style.paragraph_gap is not None:
+            para.append(f"margin-bottom: {_em(style.paragraph_gap)};")
+    if para:
+        rules.append(f"p {{ {' '.join(para)} }}")
+    if style.line_spacing is not None:
+        rules.append(f"body {{ line-height: {style.line_spacing:g}; }}")
+    rules += _font_css(fonts)
+    if not rules:
+        return ""
+    return "\n/* Settings chosen for this book */\n" + "\n".join(rules) + "\n"
+
+
+def _font_css(fonts: list[EmbeddedFont]) -> list[str]:
+    if not fonts:
+        return []
+    body_family = next((f.family for f in fonts if f.slot == "body"), None)
+    rules = []
+    for f in fonts:
+        family = body_family if f.slot.startswith("body") and body_family else f.family
+        rules.append(
+            f'@font-face {{ font-family: "{family}"; '
+            f"font-style: {'italic' if f.italic else 'normal'}; "
+            f"font-weight: {'bold' if f.bold else 'normal'}; "
+            f'src: url("../Fonts/{f.slot}.{f.extension}"); }}'
+        )
+    if body_family:
+        rules.append(f'body {{ font-family: "{body_family}", serif; }}')
+    heading = next((f.family for f in fonts if f.slot == "headings"), None)
+    if heading:
+        rules.append(f'h1, h2, h3, h4, h5, h6 {{ font-family: "{heading}", serif; }}')
+    return rules
 
 
 def _safe(name: str) -> str:
@@ -249,6 +334,31 @@ def _check_raster(rid: str, data: bytes, expected: str) -> None:
         raise ConversionError(
             "image-type-mismatch", f"Image {rid!r} is declared {expected} but is {actual}."
         )
+
+
+def _check_image_sizes(book: Book, diag: Diagnostics) -> None:
+    """Warn about images too large for the stores, or too small for their width."""
+    uses: dict[str, list[Image]] = {}
+    blocks = [b for s in book.sections() for b in _walk_blocks(s.opener + s.blocks)]
+    blocks += [b for n in book.notes.values() for b in _walk_blocks(n.blocks)]
+    for block in blocks:
+        uses.setdefault(block.resource_id, []).append(block)
+    for rid, images in sorted(uses.items()):
+        res = book.resources[rid]
+        size = measure(res.data)
+        if size is None:
+            continue
+        widest = (
+            None
+            if any(i.width is None for i in images)
+            else max(i.width for i in images if i.width is not None)
+        )
+        for code, problem in size_findings(size[0], size[1], len(res.data), widest):
+            diag.warn(
+                code,
+                f"Image {rid!r} ({describe_size(size[0], size[1], len(res.data))}): {problem}.",
+                images[0].source,
+            )
 
 
 def _check_cover(book: Book, diag: Diagnostics) -> None:
@@ -378,7 +488,9 @@ def _plan_notes(
     return plan, endnotes
 
 
-def _zip(files: dict[str, bytes], date_time: tuple[int, ...]) -> bytes:
+def _zip(
+    files: dict[str, bytes], date_time: tuple[int, ...], extra: dict[str, bytes] | None = None
+) -> bytes:
     """Deterministic zip: mimetype first and stored, then sorted entries."""
     stamp = tuple(date_time)
     if stamp[0] < 1980:
@@ -387,6 +499,7 @@ def _zip(files: dict[str, bytes], date_time: tuple[int, ...]) -> bytes:
     entries = {"mimetype": b"application/epub+zip", "META-INF/container.xml": b""}
     entries["META-INF/container.xml"] = package.container_xml(f"{ROOT}/content.opf")
     entries.update({f"{ROOT}/{name}": data for name, data in files.items()})
+    entries.update(extra or {})
     with zipfile.ZipFile(buf, "w") as z:
         for name in ["mimetype", *sorted(n for n in entries if n != "mimetype")]:
             info = zipfile.ZipInfo(name, date_time=stamp)  # type: ignore[arg-type]

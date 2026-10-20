@@ -18,7 +18,7 @@ from PIL import Image as PILImage
 from novel2epub.diagnostics import ConversionError, Diagnostics
 from novel2epub.docx.package import R_NS, DocxPackage, Rel, W
 from novel2epub.docx.styles import ParaProps, Styles
-from novel2epub.ir import DocxRef, Resource
+from novel2epub.ir import DocxRef, Resource, SourceRef
 from novel2epub.normalise.htmltags import interpret_tags
 from novel2epub.normalise.inline import Segment
 
@@ -58,7 +58,7 @@ class RawImage:
 class RawPara:
     segments: list[Segment]
     props: ParaProps
-    source: DocxRef
+    source: SourceRef
     break_before: bool = False
     break_after: bool = False
     hr: bool = False
@@ -109,7 +109,7 @@ class ImageStore:
         self.by_part: dict[str, str] = {}
         self.resources: dict[str, Resource] = {}
 
-    def get(self, rel: Rel | None, source: DocxRef) -> str:
+    def get(self, rel: Rel | None, source: SourceRef) -> str:
         if rel is None:
             raise ConversionError("image-missing", f"An image at {source} has no image data.")
         if rel.external:
@@ -130,7 +130,7 @@ class ImageStore:
         self.resources[rid] = Resource(rid, media_type, data)
         return rid
 
-    def _convert(self, data: bytes, part: str, source: DocxRef) -> tuple[bytes, str]:
+    def _convert(self, data: bytes, part: str, source: SourceRef) -> tuple[bytes, str]:
         try:
             with PILImage.open(io.BytesIO(data)) as im:
                 fmt = im.format or ""
@@ -178,7 +178,7 @@ class Walker:
         self.custom_labels: dict[str, str] = {}  # note id -> custom mark text
         self.counts: dict[str, int] = {}
 
-    def _once(self, code: str, message: str, source: DocxRef) -> None:
+    def _once(self, code: str, message: str, source: SourceRef) -> None:
         self.counts[code] = self.counts.get(code, 0) + 1
         if self.counts[code] == 1:
             self.diag.warn(code, message, source)

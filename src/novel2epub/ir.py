@@ -46,7 +46,18 @@ class ManualRef:
         return self.label
 
 
-SourceRef = DocxRef | PdfRef | ManualRef
+@dataclass(frozen=True, slots=True)
+class HtmlRef:
+    """A place in an HTML or Markdown manuscript."""
+
+    file: str
+    line: int  # one-based source line, 0 if unknown
+
+    def __str__(self) -> str:
+        return f"{self.file} line {self.line}" if self.line else self.file
+
+
+SourceRef = DocxRef | PdfRef | HtmlRef | ManualRef
 
 
 # --------------------------------------------------------------------------
@@ -184,6 +195,7 @@ class Image:
     alt: str | None  # None means the source had no alt text
     caption: list[Inline] | None = None
     source: SourceRef | None = None
+    width: float | None = None  # per cent of the text width; None: natural size, up to full
 
 
 Block = Paragraph | Heading | SceneBreak | BlockQuote | Epigraph | Verse | Image
@@ -276,6 +288,47 @@ class Cover:
 
 
 @dataclass(slots=True)
+class Style:
+    """Layout choices for the book; None leaves the stylesheet's default.
+
+    Lengths are in em, so they scale with the reader's text size. Top and
+    bottom margins apply where each chapter starts and ends: margins on every
+    page are the reading system's, not the book's.
+    """
+
+    side_margin: float | None = None
+    top_margin: float | None = None
+    bottom_margin: float | None = None
+    indent: float | None = None  # first-line indent
+    paragraph_gap: float | None = None  # space after each paragraph
+    block_paragraphs: bool = False  # no indents, a gap between paragraphs
+    line_spacing: float | None = None  # a multiple of the font size, e.g. 1.4
+
+
+# Allowed ranges for the Style values (em, or a multiple for line spacing).
+STYLE_LIMITS = {
+    "side_margin": (0.0, 10.0), "top_margin": (0.0, 10.0), "bottom_margin": (0.0, 10.0),
+    "indent": (0.0, 5.0), "paragraph_gap": (0.0, 3.0), "line_spacing": (1.0, 3.0),
+}  # fmt: skip
+
+
+@dataclass(slots=True)
+class EmbeddedFont:
+    """A font file to embed. `slot` says what it is for (see fonts.FONT_SLOTS)."""
+
+    slot: str
+    family: str
+    italic: bool
+    bold: bool
+    media_type: str  # font/ttf or font/otf
+    data: bytes
+
+    @property
+    def extension(self) -> str:
+        return self.media_type.removeprefix("font/")
+
+
+@dataclass(slots=True)
 class Book:
     metadata: Metadata
     body: list[Section]
@@ -284,6 +337,8 @@ class Book:
     notes: dict[str, Note] = field(default_factory=dict)
     resources: dict[str, Resource] = field(default_factory=dict)
     cover: Cover | None = None
+    style: Style = field(default_factory=Style)
+    fonts: list[EmbeddedFont] = field(default_factory=list)
 
     def sections(self) -> list[Section]:
         return [*self.front, *self.body, *self.back]

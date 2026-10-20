@@ -20,6 +20,8 @@ Use one book that exercises everything: a converted book with a title page, a de
 | Italics and bold | Present where the manuscript has them |
 | Footnotes | Tapping a marker shows the note (pop-up, or a jump with a working way back) |
 | Reader settings | Changing font, size, and line spacing in the reader changes the book: the book never fights the reader |
+| Chosen fonts (if any) | The embedded fonts are shown, italic and bold included; Kindle only under "Publisher font" |
+| Chosen layout (if any) | Margins, indents, and paragraph gaps match the Appearance settings |
 | Accessibility | A screen reader (VoiceOver, TalkBack, or NVDA with Thorium) reads in order, announces headings, and announces scene breaks as separators |
 
 ## Reader-specific

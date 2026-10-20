@@ -50,6 +50,19 @@ def plain(segments: list[Segment]) -> str:
     )
 
 
+def plain_text(inlines: list[Inline]) -> str:
+    """The text of built inlines, without formatting; line breaks become spaces."""
+    out: list[str] = []
+    for node in inlines:
+        if isinstance(node, Text):
+            out.append(node.text)
+        elif isinstance(node, LineBreak):
+            out.append(" ")
+        elif isinstance(node, Span | Link):
+            out.append(plain_text(node.children))
+    return "".join(out)
+
+
 def build_inlines(segments: list[Segment]) -> list[Inline]:
     return _build(segments, ("link", *FORMATS))
 

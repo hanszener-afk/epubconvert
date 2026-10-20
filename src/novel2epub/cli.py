@@ -15,13 +15,13 @@ from novel2epub.pipeline import ConvertOptions, ExitCode, Outcome, convert
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="novel2epub",
-        description="Convert a DOCX or PDF novel manuscript into an EPUB 3 file, "
+        description="Convert a DOCX, PDF, Markdown, or HTML novel manuscript into an EPUB 3 file, "
         "and check that no text was lost.",
         epilog="Exit codes: 0 success, 1 success with warnings, 2 usage error, "
         "3 input rejected, 4 verification failed (fidelity or EPUBCheck), "
         "5 internal error.",
     )
-    p.add_argument("input", type=Path, help="the manuscript (.docx or .pdf)")
+    p.add_argument("input", type=Path, help="the manuscript (.docx, .pdf, .md, or .html)")
     p.add_argument(
         "-o",
         "--output",

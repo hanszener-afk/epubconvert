@@ -1,14 +1,21 @@
 # novel2epub
 
-Converts DOCX and PDF novel manuscripts into EPUB 3, and checks that no text was lost on the way.
+Converts DOCX, PDF, Markdown, and HTML novel manuscripts into EPUB 3, and checks that no text was lost on the way.
 
-**Status: v1 (all five milestones).** DOCX and PDF conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. A portable Windows program needs no Python or Java. It has been tested on generated fixtures, a public-domain novel, and two real manuscripts. It has been checked in Okular, calibre, and Foliate, and with the Ace accessibility checker (`docs/reader-results.md`), but not yet in Kindle, Apple Books, or Kobo, or on a physical e-reader (`docs/reader-checklist.md`).
+**Status: 0.7.** DOCX, PDF, Markdown, and HTML (Claude's, Google Docs exports, and AO3 downloads) conversion work end to end, with a text-fidelity check and EPUBCheck validation on every run. A portable Windows program needs no Python or Java. It has been tested on generated fixtures, a public-domain novel, and two real manuscripts. It has been checked in Okular, calibre, and Foliate, and with the Ace accessibility checker (`docs/reader-results.md`), but not yet in Kindle, Apple Books, or Kobo, or on a physical e-reader (`docs/reader-checklist.md`).
 
 ## Windows
 
 Download `novel2epub-VERSION-windows.zip` from the repository's Releases page and unzip it anywhere. There is nothing to install, and Java is included. The program is not signed, so the first time Windows may say "Windows protected your PC": choose "More info", then "Run anyway".
 
-**In a window:** double-click `novel2epub-gui.exe`, choose the manuscript, and press Convert. Everything else is optional: title, authors, language, cover, a metadata file, what to do with tracked changes, curly quotes, and a chapter heading pattern. The result appears in the window, with buttons to read the report and open the folder. Dropping a manuscript on `novel2epub-gui.exe` fills it in.
+**In a window:** double-click `novel2epub-gui.exe`, choose the manuscript, and press Convert. Everything else is optional, on three tabs:
+
+- **Convert:** where to save the EPUB, what to do with tracked changes, curly quotes, and a chapter heading pattern. The result appears here, with buttons to read the report and open the folder.
+- **Book details:** every metadata field (title, subtitle, authors, language, identifier, publisher, date, series, description, rights, ISBN, cover and its description, and the accessibility fields). "Generate" makes a permanent identifier.
+- **Images:** pictures for `[image: ...]` placeholders (see below), each with an optional description.
+- **Appearance:** side, top, and bottom margins; indented or block paragraphs, indent, space between paragraphs, and line spacing; and fonts (see below).
+
+"Save" keeps the Book details and Appearance tabs in a book file (`.toml`). A book file with the manuscript's name, beside it, is opened when the manuscript is chosen, so each book remembers its settings. Dropping a manuscript on `novel2epub-gui.exe` fills it in.
 
 **From Command Prompt or PowerShell:** run `novel2epub.exe` with the options below. Dropping a manuscript on `novel2epub.exe` converts it straight away, with the default options, and keeps the window open until Enter is pressed.
 
@@ -74,7 +81,9 @@ If more than 0.1% of the text is missing, or EPUBCheck reports an error, the EPU
 
 There is no network access and no telemetry.
 
-### Metadata file
+### The book file (metadata, style, and fonts)
+
+The window writes this file; it can also be written by hand and passed with `--meta`.
 
 ```toml
 title = "The Lighthouse Keeper's Daughter"
@@ -95,9 +104,92 @@ cover_alt = "A lighthouse at dusk"
 summary = "..."
 conforms_to = "EPUB Accessibility 1.1 - WCAG 2.1 Level AA"  # only if you have checked
 certified_by = "Small Press"
+
+[style]               # sizes in em; leave out anything you do not want to change
+side_margin = 3       # default 2.5 (6% of the screen width in most readers)
+top_margin = 2        # default 1.5; where each chapter starts
+bottom_margin = 1.5   # default 1.5; where each chapter ends
+indent = 1.5          # first-line indent, default 1.5
+paragraph_gap = 0     # space after each paragraph, default 0
+block_paragraphs = false   # true: no indents, a gap between paragraphs
+line_spacing = 1.4    # default: the reader's choice
+
+[fonts]               # .ttf or .otf files, relative to this file
+body = "fonts/Garamond-Regular.ttf"
+body_italic = "fonts/Garamond-Italic.ttf"
+body_bold = "fonts/Garamond-Bold.ttf"
+body_bold_italic = "fonts/Garamond-BoldItalic.ttf"
+headings = "fonts/Display-Regular.ttf"
 ```
 
-Command-line flags override the file, which overrides the document's own properties. Unknown keys are errors, to catch typos. If no identifier is given, one is derived from the title and authors, so it changes if either changes: pin it once the book has one.
+Command-line flags override the file, which overrides the document's own properties. Unknown keys and out-of-range values are errors, to catch typos. If no identifier is given, one is derived from the title and authors, so it changes if either changes: pin it once the book has one.
+
+### Adding pictures with placeholders
+
+Pictures already in a manuscript (in Word, in a PDF, `![alt](file.png)` in Markdown, `<img>` in HTML) are kept. To add one that is not, type a line of its own, in any of the formats, where it should go:
+
+```
+[image: map.png]
+[image: map.png | A map of the harbour at low tide]
+[image: map.png | A map of the harbour at low tide | 60%]
+[image: map.png | 60%]
+```
+
+- **The file** is looked for among the images added on the window's Images tab (or `[[images]]` in the book file), by file name, and then in the manuscript's folder. Case does not matter.
+- **The description** after `|` is read aloud by screen readers; without one there, the description given on the Images tab is used, and without either, the report warns.
+- **The width** (the last part, such as `60%`) is how much of the text column the picture takes, from 5% to 100%. Without one, the picture shows at its natural size, never wider than the text. A width typed in the placeholder wins over one given on the Images tab.
+- **Only a line of its own** becomes a picture. A placeholder inside a sentence stays as text, with a warning.
+- **A missing picture stops the conversion**, naming the placeholder and where it is, rather than publishing the book without it.
+- The placeholder is listed in the report as replaced, and the text check accounts for it.
+
+In the book file:
+
+```toml
+[[images]]
+file = "art/map.png"
+description = "A map of the harbour at low tide"
+width = 60
+```
+
+### Is an image the right size?
+
+Every picture in the book (from the manuscript or a placeholder) is checked, and the report warns when one is:
+
+- **over 5.6 million pixels** (width times height): Apple Books' limit for pictures inside a book;
+- **over 5 MB**: the widely reported Kindle limit per picture (not confirmed in Amazon's current guidelines); large pictures also raise Kindle's delivery charge;
+- **too few pixels for the width chosen for it**: fewer than about 600 pixels for a picture stretched across the whole text column (proportionally fewer for a narrower width), so it may look soft on a tablet. This is a rule of thumb, not a store rule. A picture with no width set is shown at its own size and never stretched, so it is not flagged.
+
+The Images tab shows the same for each added picture: its size in pixels and file size, and a short flag; selecting a picture shows the full explanation. Pictures are never resized or recompressed: the converter only reports.
+
+### Layout and fonts: what readers do with them
+
+- **Margins:** top and bottom margins apply where each chapter starts and ends. The margin on every page is the reading app's, not the book's (Okular, for example, leaves 4 pixels; see `docs/reader-results.md`).
+- **Line spacing:** best left to the reader. Kindle handles a fixed line spacing badly and some readers ignore it.
+- **Fonts:** only the body font is needed; without italic and bold files, readers imitate them, which looks worse. The fonts are embedded as they are (no subsetting). Kindle shows them only when the reader picks "Publisher font"; Apple Books is told to use them. A font whose licence flag forbids embedding is still embedded, with a warning in the report: check the licence before publishing.
+
+## How Markdown manuscripts are read
+
+CommonMark, with footnotes (`text[^1]` and `[^1]: the note`). `#` headings are chapters, or, when a single `#` heading sits above `##` headings, the book's title with `##` chapters. A line of `***` is a scene break. A front matter block at the top can give the title, authors, and language:
+
+```markdown
+---
+title: The Harbour
+author: Ann Author
+language: en-GB
+---
+```
+
+The fidelity check strips Markdown's markup from the raw text with its own simple rules, not with the Markdown parser, so a construct the converter misreads shows up as a difference.
+
+## How HTML manuscripts are read
+
+- **Any page:** headings, paragraphs, block quotations, line breaks, italic, bold, small caps, superscript, links, and images (from files beside the page, or embedded as data). `<hr>` is a scene break. Scripts and styles are ignored; a navigation list (`<nav>`) is removed, and logged, as a contents list. Images on the web are refused: nothing connects to the network, so download them beside the page first.
+- **Footnotes:** a link to a place in the page that links back is a footnote, whichever tool wrote it (Google Docs, Markdown converters, hand-written).
+- **Google Docs** (File, Download, Web page): italic and bold come from the page's style rules, as Google writes them; the hidden page-break rules are page breaks, not scene breaks; Google's link redirects are removed; comments are removed and counted, as for Word.
+- **AO3 downloads** (HTML): the work's title, author, and summary become the book's metadata; the Archive's own text (tags, statistics, "Posted originally on...", "Chapter Text", "Please drop by the archive and comment") is removed and listed in the report. The author's work and chapter notes are kept.
+- **Claude's HTML:** read as any page; a page title and a single top heading become the book's title.
+
+The Google Docs and AO3 rules were written from those services' published page structure and tested on imitations, not on real exports yet.
 
 ## How DOCX manuscripts are read
 
@@ -136,6 +228,7 @@ These are known and deliberate for v1:
 - PDF: italic and bold are inferred from font names. A typeface whose names do not say "Italic" or "Bold" loses them, and the fidelity check cannot notice.
 - PDF: the fidelity check cannot see furniture that was *not* removed (a header left in the text is present in the source too). The report's removal counts are the check: a long book with no running headers removed is worth a look.
 - PDF: PDFs rarely record their language; set `--language` if the book is not in English.
+- Markdown and HTML: tables are flattened; SVG images, drawings, and form controls are removed with a warning; footnotes must link back to their reference to be recognised as footnotes (otherwise they stay as text where they are).
 - Only English is supported. Other languages convert, but chapter and front-matter detection expect English words.
 - No conversion is perfect. The report lists every decision the converter was unsure of; read the "Needs human review" section before publishing.
 

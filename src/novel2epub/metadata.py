@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
 import tomllib
 import uuid
@@ -10,7 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from novel2epub.diagnostics import ConversionError, Diagnostics
-from novel2epub.ir import Metadata
+from novel2epub.fonts import FONT_SLOTS
+from novel2epub.ir import STYLE_LIMITS, Metadata, Style
 
 # Fixed namespace so that derived identifiers are stable across machines and versions.
 _NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/hanszener-afk/epubconvert")
@@ -99,7 +101,8 @@ def resolve(meta: Metadata, source_date: datetime | None, diag: Diagnostics) -> 
 
 
 # --------------------------------------------------------------------------
-# Metadata file (TOML)
+# The book file (TOML): metadata, cover, style, and fonts for one book.
+# Paths in it are relative to the file, so a book's folder can be moved.
 
 _SIMPLE_FIELDS = (
     "title", "subtitle", "language", "identifier", "publisher", "date", "series",
@@ -107,6 +110,7 @@ _SIMPLE_FIELDS = (
 )  # fmt: skip
 _A11Y_FIELDS = {"summary": "accessibility_summary", "conforms_to": "conforms_to",
                 "certified_by": "certified_by"}  # fmt: skip
+FONT_KEYS = tuple(FONT_SLOTS)
 
 
 @dataclasses.dataclass
@@ -114,36 +118,164 @@ class MetaFile:
     fields: dict[str, object]
     cover: Path | None = None
     cover_alt: str | None = None
+    style: Style = dataclasses.field(default_factory=Style)
+    fonts: dict[str, Path] = dataclasses.field(default_factory=dict)
+    # Images for [image: file] placeholders: (file, description, width in per cent).
+    images: list[tuple[Path, str | None, float | None]] = dataclasses.field(default_factory=list)
 
 
 def load_meta_file(path: Path) -> MetaFile:
-    """Read a TOML metadata file. Unknown keys are errors, to catch typos."""
+    """Read a book file. Unknown keys and out-of-range values are errors, to catch typos."""
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise ConversionError("meta-invalid", f"Cannot read metadata file {path}: {exc}") from exc
-    fields: dict[str, object] = {}
-    cover = None
-    cover_alt = None
+    meta = MetaFile({})
     for key, value in data.items():
         if key in _SIMPLE_FIELDS:
-            fields[key] = str(value)
+            meta.fields[key] = str(value)
         elif key in ("author", "authors"):
-            fields["authors"] = [value] if isinstance(value, str) else [str(v) for v in value]
+            meta.fields["authors"] = [value] if isinstance(value, str) else [str(v) for v in value]
         elif key == "cover":
-            cover = (path.parent / str(value)).resolve()
+            meta.cover = (path.parent / str(value)).resolve()
         elif key == "cover_alt":
-            cover_alt = str(value)
+            meta.cover_alt = str(value)
         elif key == "accessibility" and isinstance(value, dict):
             for k, v in value.items():
                 if k not in _A11Y_FIELDS:
                     raise ConversionError(
                         "meta-invalid", f"Unknown key accessibility.{k} in {path}."
                     )
-                fields[_A11Y_FIELDS[k]] = str(v)
+                meta.fields[_A11Y_FIELDS[k]] = str(v)
+        elif key == "style" and isinstance(value, dict):
+            meta.style = _load_style(value, path)
+        elif key == "fonts" and isinstance(value, dict):
+            for k, v in value.items():
+                if k not in FONT_KEYS:
+                    raise ConversionError(
+                        "meta-invalid",
+                        f"Unknown key fonts.{k} in {path}; use {', '.join(FONT_KEYS)}.",
+                    )
+                meta.fonts[k] = (path.parent / str(v)).resolve()
+        elif key == "images" and isinstance(value, list):
+            for entry in value:
+                if not isinstance(entry, dict) or "file" not in entry:
+                    raise ConversionError(
+                        "meta-invalid", f"Each [[images]] entry in {path} needs a file."
+                    )
+                unknown = set(entry) - {"file", "description", "width"}
+                if unknown:
+                    raise ConversionError(
+                        "meta-invalid", f"Unknown key images.{sorted(unknown)[0]} in {path}."
+                    )
+                description = str(entry["description"]) if entry.get("description") else None
+                width = entry.get("width")
+                if width is not None and (
+                    isinstance(width, bool)
+                    or not isinstance(width, int | float)
+                    or not 5 <= width <= 100
+                ):
+                    raise ConversionError(
+                        "meta-invalid", f"images.width in {path} must be a number from 5 to 100."
+                    )
+                file = (path.parent / str(entry["file"])).resolve()
+                meta.images.append((file, description, float(width) if width else None))
         else:
             raise ConversionError("meta-invalid", f"Unknown key {key!r} in {path}.")
-    return MetaFile(fields, cover, cover_alt)
+    return meta
+
+
+def _load_style(table: dict[str, object], path: Path) -> Style:
+    style = Style()
+    for key, value in table.items():
+        if key == "block_paragraphs":
+            if not isinstance(value, bool):
+                raise ConversionError(
+                    "meta-invalid", f"style.block_paragraphs in {path} must be true or false."
+                )
+            style.block_paragraphs = value
+            continue
+        if key not in STYLE_LIMITS:
+            raise ConversionError("meta-invalid", f"Unknown key style.{key} in {path}.")
+        low, high = STYLE_LIMITS[key]
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ConversionError("meta-invalid", f"style.{key} in {path} must be a number.")
+        if not low <= value <= high:
+            raise ConversionError(
+                "meta-invalid", f"style.{key} in {path} must be between {low:g} and {high:g}."
+            )
+        setattr(style, key, float(value))
+    return style
+
+
+def _toml_string(text: str) -> str:
+    out = []
+    for ch in text:
+        if ch in ('"', "\\"):
+            out.append("\\" + ch)
+        elif ch == "\n":
+            out.append("\\n")
+        elif ch == "\t":
+            out.append("\\t")
+        elif ord(ch) < 0x20 or ord(ch) == 0x7F:
+            out.append(f"\\u{ord(ch):04X}")
+        else:
+            out.append(ch)
+    return '"' + "".join(out) + '"'
+
+
+def _toml_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return f"{value:g}"
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_string(str(v)) for v in value) + "]"
+    return _toml_string(str(value))
+
+
+def _relative(target: Path, base: Path) -> str:
+    try:
+        return Path(os.path.relpath(target, base)).as_posix()
+    except ValueError:  # another drive on Windows
+        return str(target)
+
+
+def save_meta_file(meta: MetaFile, path: Path) -> None:
+    """Write `meta` as a book file that load_meta_file reads back unchanged."""
+    base = path.resolve().parent
+    lines = ["# novel2epub book file: metadata, cover, style, and fonts for one book.", ""]
+
+    def put(key: str, value: object) -> None:
+        if value not in (None, "", []):
+            lines.append(f"{key} = {_toml_value(value)}")
+
+    for key in ("title", "subtitle"):
+        put(key, meta.fields.get(key))
+    put("authors", meta.fields.get("authors"))
+    for key in _SIMPLE_FIELDS[2:]:
+        put(key, meta.fields.get(key))
+    if meta.cover is not None:
+        put("cover", _relative(meta.cover, base))
+    put("cover_alt", meta.cover_alt)
+
+    sections = [
+        ("accessibility", [(k, meta.fields.get(f)) for k, f in _A11Y_FIELDS.items()]),
+        ("style", [(k, getattr(meta.style, k)) for k in (*STYLE_LIMITS, "block_paragraphs")]),
+        ("fonts", [(k, _relative(meta.fonts[k], base)) for k in FONT_KEYS if k in meta.fonts]),
+    ]
+    for name, entries in sections:
+        present = [(k, v) for k, v in entries if v not in (None, "", False)]
+        if present:
+            lines += ["", f"[{name}]"]
+            lines += [f"{k} = {_toml_value(v)}" for k, v in present]
+    for image, description, width in meta.images:
+        lines += ["", "[[images]]", f"file = {_toml_string(_relative(image, base))}"]
+        if description:
+            lines.append(f"description = {_toml_string(description)}")
+        if width is not None:
+            lines.append(f"width = {width:g}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def apply_overrides(meta: Metadata, overrides: dict[str, object]) -> Metadata:
